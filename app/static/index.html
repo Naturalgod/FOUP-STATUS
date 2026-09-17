@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>FOUP Control Sheet</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-2" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-lockup">
+        <div class="foup-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div>
+          <p class="eyebrow">FAB OPERATIONS</p>
+          <h1>FOUP Control Sheet</h1>
+          <p class="subtitle">실시간 Wafer 정보와 사용 계획을 한 화면에서 관리합니다.</p>
+        </div>
+      </div>
+      <div class="connection-pill" id="connection-pill" aria-live="polite">
+        <span class="connection-dot"></span>
+        <span id="connection-label">연결 중</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="summary-strip" aria-label="현황 요약">
+        <div class="summary-item">
+          <span class="summary-label">FOUP</span>
+          <strong id="stat-foups">—</strong>
+          <span class="summary-unit">대</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">현재 Wafer</span>
+          <strong id="stat-wafers">—</strong>
+          <span class="summary-unit">장</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">계획 입력 Slot</span>
+          <strong id="stat-plans">—</strong>
+          <span class="summary-unit">개</span>
+        </div>
+        <div class="summary-spacer"></div>
+        <div class="sync-meta">
+          <span id="live-mode" class="mode-badge">연동 확인 중</span>
+          <span id="last-sync">—</span>
+        </div>
+      </section>
+
+      <section class="sheet-toolbar" aria-label="시트 도구 모음">
+        <div class="toolbar-row toolbar-main">
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" /></svg>
+            <input id="search-input" type="search" placeholder="FOUP, Wafer, 사용자, 세부사항 검색" autocomplete="off" />
+          </label>
+          <label class="select-wrap">
+            <span class="sr-only">상태 필터</span>
+            <select id="status-filter">
+              <option value="all">전체 상태</option>
+              <option value="ONLINE">온라인</option>
+              <option value="UNAVAILABLE">연동 불가</option>
+            </select>
+          </label>
+          <button class="button secondary" id="refresh-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5m10.1-2A7 7 0 0 0 6.6 7.6L4 11m16 2-2.6 3.4A7 7 0 0 1 4.9 14" /></svg>
+            새로고침
+          </button>
+          <label class="user-box">
+            <span>편집자</span>
+            <input id="user-name" type="text" maxlength="80" value="익명 사용자" />
+          </label>
+        </div>
+        <div class="toolbar-row color-row">
+          <span class="toolbar-label">예약 표시</span>
+          <div class="color-palette" id="color-palette" role="group" aria-label="선택 셀 배경색">
+            <button type="button" class="color-button no-color" data-color="" title="색 없음" aria-label="색 없음">
+              <span></span>
+            </button>
+            <button type="button" class="color-button" data-color="#FFF2CC" style="--swatch:#FFF2CC" title="노랑" aria-label="노랑"></button>
+            <button type="button" class="color-button" data-color="#D9EAF7" style="--swatch:#D9EAF7" title="파랑" aria-label="파랑"></button>
+            <button type="button" class="color-button" data-color="#E2F0D9" style="--swatch:#E2F0D9" title="초록" aria-label="초록"></button>
+            <button type="button" class="color-button" data-color="#FCE4D6" style="--swatch:#FCE4D6" title="주황" aria-label="주황"></button>
+            <button type="button" class="color-button" data-color="#F4CCCC" style="--swatch:#F4CCCC" title="빨강" aria-label="빨강"></button>
+            <button type="button" class="color-button" data-color="#E4DFEC" style="--swatch:#E4DFEC" title="보라" aria-label="보라"></button>
+          </div>
+          <span class="selection-count" id="selection-count">셀을 선택하면 색을 지정할 수 있습니다.</span>
+          <div class="toolbar-help">
+            <kbd>Shift</kbd> 범위 선택
+            <span>·</span>
+            <kbd>⌘/Ctrl</kbd> 다중 선택
+            <span>·</span>
+            붙여넣기 지원
+          </div>
+        </div>
+      </section>
+
+      <div id="system-notice" class="system-notice" hidden></div>
+
+      <section id="loading-state" class="loading-state" aria-live="polite">
+        <div class="loading-spinner"></div>
+        <p>FOUP 정보를 불러오는 중입니다.</p>
+      </section>
+
+      <section id="empty-state" class="empty-state" hidden>
+        <strong>조건에 맞는 FOUP이 없습니다.</strong>
+        <span>검색어나 상태 필터를 바꿔보세요.</span>
+      </section>
+
+      <section id="foup-grid" class="foup-grid" aria-label="FOUP 사용 계획 시트"></section>
+    </main>
+
+    <aside id="history-drawer" class="history-drawer" aria-hidden="true">
+      <div class="drawer-backdrop" data-close-drawer></div>
+      <section class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="history-title">
+        <header class="drawer-header">
+          <div>
+            <p class="eyebrow">WAFER TRACE</p>
+            <h2 id="history-title">Wafer History</h2>
+            <p id="history-subtitle">—</p>
+          </div>
+          <button type="button" class="icon-button" data-close-drawer aria-label="닫기">×</button>
+        </header>
+        <div id="history-content" class="history-content"></div>
+      </section>
+    </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="/static/app.js?v=20260917-2" defer></script>
+  </body>
+</html>

@@ -1,0 +1,689 @@
+"use strict";
+
+const EDITABLE_COLUMNS = ["planned_sub", "assignee", "details"];
+const stateStore = {
+  data: null,
+  selected: new Set(),
+  anchor: null,
+  dragging: false,
+  toastTimer: null,
+  reconnectTimer: null,
+  pendingSaves: new WeakMap(),
+};
+
+const elements = {
+  grid: document.getElementById("foup-grid"),
+  loading: document.getElementById("loading-state"),
+  empty: document.getElementById("empty-state"),
+  search: document.getElementById("search-input"),
+  statusFilter: document.getElementById("status-filter"),
+  refresh: document.getElementById("refresh-button"),
+  userName: document.getElementById("user-name"),
+  palette: document.getElementById("color-palette"),
+  selectionCount: document.getElementById("selection-count"),
+  notice: document.getElementById("system-notice"),
+  connectionPill: document.getElementById("connection-pill"),
+  connectionLabel: document.getElementById("connection-label"),
+  historyDrawer: document.getElementById("history-drawer"),
+  historyTitle: document.getElementById("history-title"),
+  historySubtitle: document.getElementById("history-subtitle"),
+  historyContent: document.getElementById("history-content"),
+  toast: document.getElementById("toast"),
+  statFoups: document.getElementById("stat-foups"),
+  statWafers: document.getElementById("stat-wafers"),
+  statPlans: document.getElementById("stat-plans"),
+  liveMode: document.getElementById("live-mode"),
+  lastSync: document.getElementById("last-sync"),
+};
+
+function cellKey(foupId, slotNo, columnKey) {
+  return `${foupId}|${slotNo}|${columnKey}`;
+}
+
+function userName() {
+  return elements.userName.value.trim() || "익명 사용자";
+}
+
+function apiHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "X-User": encodeURIComponent(userName()),
+  };
+}
+
+function formatTime(value) {
+  if (!value) return "동기화 시각 없음";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || "—";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function showToast(message, type = "success") {
+  window.clearTimeout(stateStore.toastTimer);
+  elements.toast.textContent = message;
+  elements.toast.classList.toggle("error", type === "error");
+  elements.toast.classList.add("show");
+  stateStore.toastTimer = window.setTimeout(() => {
+    elements.toast.classList.remove("show");
+  }, 2600);
+}
+
+function setConnection(status, label) {
+  elements.connectionPill.classList.toggle("online", status === "online");
+  elements.connectionPill.classList.toggle("offline", status === "offline");
+  elements.connectionLabel.textContent = label;
+}
+
+async function loadState({ announce = false } = {}) {
+  elements.refresh.classList.add("loading");
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    stateStore.data = data;
+    render(data);
+    if (announce) showToast("최신 정보를 불러왔습니다.");
+  } catch (error) {
+    elements.loading.hidden = true;
+    elements.notice.hidden = false;
+    elements.notice.textContent = `데이터를 불러오지 못했습니다. (${error.message})`;
+    showToast("FOUP 정보를 불러오지 못했습니다.", "error");
+  } finally {
+    elements.refresh.classList.remove("loading");
+  }
+}
+
+function render(data) {
+  elements.loading.hidden = true;
+  elements.grid.replaceChildren();
+  stateStore.selected.clear();
+  stateStore.anchor = null;
+  updateSelectionLabel();
+
+  elements.statFoups.textContent = data.summary.foup_count;
+  elements.statWafers.textContent = data.summary.occupied_slots;
+  elements.statPlans.textContent = data.summary.planned_slots;
+  elements.lastSync.textContent = `화면 갱신 ${formatTime(data.generated_at)}`;
+  elements.liveMode.textContent = data.live_mode === "demo" ? "DEMO LIVE DATA" : "COMPANY LIVE API";
+  elements.liveMode.classList.toggle("demo", data.live_mode === "demo");
+
+  if (data.live_error) {
+    elements.notice.hidden = false;
+    elements.notice.textContent = `${data.live_error} 계획 편집 기능은 계속 사용할 수 있습니다.`;
+  } else if (data.live_mode === "demo") {
+    elements.notice.hidden = false;
+    elements.notice.textContent = "현재는 데모 실시간 데이터를 표시합니다. FOUP_LIVE_API_URL을 설정하면 사내 API로 전환됩니다.";
+  } else {
+    elements.notice.hidden = true;
+  }
+
+  data.foups.forEach((foup) => elements.grid.appendChild(buildFoupCard(foup)));
+  applyFilters();
+}
+
+function textNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function buildFoupCard(foup) {
+  const card = document.createElement("article");
+  card.className = "foup-card";
+  card.dataset.foup = foup.id;
+  card.dataset.status = foup.live.status || "UNAVAILABLE";
+  card.style.setProperty("--header-color", foup.header_color);
+
+  const header = document.createElement("header");
+  header.className = "foup-card-header";
+
+  const identity = document.createElement("div");
+  const idLine = document.createElement("div");
+  idLine.className = "foup-id-line";
+  idLine.append(textNode("h2", "", foup.id), textNode("span", "material-tag", foup.category));
+  identity.appendChild(idLine);
+
+  const meta = document.createElement("div");
+  meta.className = "foup-meta";
+  const owner = document.createElement("span");
+  owner.append("OWNER ", textNode("strong", "", foup.owner));
+  const total = document.createElement("span");
+  total.append("TOTAL ", textNode("strong", "", String(foup.total_slots)));
+  const filled = foup.slots.filter((slot) => slot.live.wafer_id).length;
+  const occupancy = document.createElement("span");
+  occupancy.append("LOADED ", textNode("strong", "", `${filled}/${foup.total_slots}`));
+  meta.append(owner, total, occupancy);
+  identity.appendChild(meta);
+
+  const location = document.createElement("div");
+  location.className = "location-block";
+  location.append(
+    textNode("span", "location-label", "CURRENT LOCATION"),
+    textNode("strong", "location-value", foup.live.location || "연동 정보 없음")
+  );
+  const badge = textNode("span", `status-badge ${foup.live.status === "ONLINE" ? "" : "unavailable"}`, foup.live.status || "UNAVAILABLE");
+  location.appendChild(badge);
+  header.append(identity, location);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-wrap";
+  const table = document.createElement("table");
+  table.className = "sheet-table";
+  table.dataset.foup = foup.id;
+  table.setAttribute("aria-label", `${foup.id} Slot 계획`);
+  table.innerHTML = `
+    <colgroup>
+      <col class="slot-col"><col class="wafer-col"><col class="step-col">
+      <col class="sub-col"><col class="user-col"><col class="detail-col">
+    </colgroup>
+    <thead><tr>
+      <th>Slot</th><th>현재 Wafer</th><th>현재 Step</th>
+      <th>Sub</th><th>사용자</th><th>세부사항</th>
+    </tr></thead>`;
+  const tbody = document.createElement("tbody");
+
+  foup.slots.forEach((slot) => {
+    const row = document.createElement("tr");
+    row.appendChild(textNode("td", "slot-cell", String(slot.slot_no)));
+
+    const wafer = textNode("td", `live-cell wafer-cell ${slot.live.wafer_id ? "has-wafer" : "empty-wafer"}`, slot.live.wafer_id || "—");
+    if (slot.live.wafer_id) {
+      wafer.tabIndex = 0;
+      wafer.dataset.foup = foup.id;
+      wafer.dataset.slot = String(slot.slot_no);
+      wafer.dataset.wafer = slot.live.wafer_id;
+      wafer.title = "Wafer History 열기";
+    }
+    row.appendChild(wafer);
+    row.appendChild(textNode("td", "live-cell", slot.live.current_step || "—"));
+
+    EDITABLE_COLUMNS.forEach((columnKey) => {
+      const cell = slot.cells[columnKey];
+      const td = textNode("td", "editable-cell", cell.value || "");
+      td.contentEditable = "true";
+      td.spellcheck = false;
+      td.tabIndex = 0;
+      td.dataset.foup = foup.id;
+      td.dataset.slot = String(slot.slot_no);
+      td.dataset.column = columnKey;
+      td.dataset.version = String(cell.version);
+      td.dataset.original = cell.value || "";
+      td.dataset.updatedBy = cell.updated_by || "";
+      td.setAttribute("role", "gridcell");
+      td.setAttribute("aria-label", `${foup.id} ${slot.slot_no}번 ${columnKey}`);
+      if (cell.color) {
+        td.style.backgroundColor = cell.color;
+        td.dataset.color = cell.color;
+      }
+      row.appendChild(td);
+    });
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  card.append(header, tableWrap);
+
+  const searchable = [
+    foup.id,
+    foup.category,
+    foup.owner,
+    foup.live.location,
+    ...foup.slots.flatMap((slot) => [
+      slot.live.wafer_id,
+      slot.live.current_step,
+      ...EDITABLE_COLUMNS.map((key) => slot.cells[key].value),
+    ]),
+  ].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+  card.dataset.search = searchable;
+  return card;
+}
+
+function applyFilters() {
+  const query = elements.search.value.trim().toLocaleLowerCase("ko-KR");
+  const status = elements.statusFilter.value;
+  let visible = 0;
+  document.querySelectorAll(".foup-card").forEach((card) => {
+    const matchesQuery = !query || card.dataset.search.includes(query);
+    const matchesStatus = status === "all" || card.dataset.status === status;
+    card.hidden = !(matchesQuery && matchesStatus);
+    if (!card.hidden) visible += 1;
+  });
+  elements.empty.hidden = visible !== 0;
+}
+
+function getCellByKey(key) {
+  const [foupId, slotNo, columnKey] = key.split("|");
+  return document.querySelector(
+    `.editable-cell[data-foup="${CSS.escape(foupId)}"][data-slot="${slotNo}"][data-column="${columnKey}"]`
+  );
+}
+
+function selectOnly(cell) {
+  clearSelection();
+  const key = cellKey(cell.dataset.foup, cell.dataset.slot, cell.dataset.column);
+  stateStore.selected.add(key);
+  stateStore.anchor = key;
+  cell.classList.add("selected");
+  updateSelectionLabel();
+}
+
+function toggleSelection(cell) {
+  const key = cellKey(cell.dataset.foup, cell.dataset.slot, cell.dataset.column);
+  if (stateStore.selected.has(key)) {
+    stateStore.selected.delete(key);
+    cell.classList.remove("selected");
+  } else {
+    stateStore.selected.add(key);
+    cell.classList.add("selected");
+    stateStore.anchor = key;
+  }
+  updateSelectionLabel();
+}
+
+function clearSelection() {
+  document.querySelectorAll(".editable-cell.selected").forEach((cell) => cell.classList.remove("selected"));
+  stateStore.selected.clear();
+  updateSelectionLabel();
+}
+
+function selectRange(anchorKey, targetCell, additive = false) {
+  const [anchorFoup, anchorSlotText, anchorColumn] = anchorKey.split("|");
+  if (anchorFoup !== targetCell.dataset.foup) {
+    selectOnly(targetCell);
+    return;
+  }
+  if (!additive) clearSelection();
+  const startSlot = Number(anchorSlotText);
+  const endSlot = Number(targetCell.dataset.slot);
+  const startColumn = EDITABLE_COLUMNS.indexOf(anchorColumn);
+  const endColumn = EDITABLE_COLUMNS.indexOf(targetCell.dataset.column);
+  const minSlot = Math.min(startSlot, endSlot);
+  const maxSlot = Math.max(startSlot, endSlot);
+  const minColumn = Math.min(startColumn, endColumn);
+  const maxColumn = Math.max(startColumn, endColumn);
+  for (let slot = minSlot; slot <= maxSlot; slot += 1) {
+    for (let column = minColumn; column <= maxColumn; column += 1) {
+      const key = cellKey(anchorFoup, slot, EDITABLE_COLUMNS[column]);
+      const cell = getCellByKey(key);
+      if (cell) {
+        stateStore.selected.add(key);
+        cell.classList.add("selected");
+      }
+    }
+  }
+  updateSelectionLabel();
+}
+
+function updateSelectionLabel() {
+  const count = stateStore.selected.size;
+  elements.selectionCount.textContent = count
+    ? `${count}개 셀 선택됨`
+    : "셀을 선택하면 색을 지정할 수 있습니다.";
+}
+
+function normalizeCellText(cell) {
+  return cell.innerText.replace(/\r?\n/g, " ").replace(/\u00a0/g, " ");
+}
+
+async function saveCell(cell, { moveAfter = null } = {}) {
+  if (!cell || !cell.classList.contains("editable-cell")) return true;
+  const pending = stateStore.pendingSaves.get(cell);
+  if (pending) {
+    const pendingResult = await pending;
+    if (normalizeCellText(cell) !== (cell.dataset.original || "")) {
+      return saveCell(cell, { moveAfter });
+    }
+    if (pendingResult && moveAfter) moveFocus(cell, moveAfter);
+    return pendingResult;
+  }
+
+  const value = normalizeCellText(cell);
+  const original = cell.dataset.original || "";
+  if (value === original) {
+    if (moveAfter) moveFocus(cell, moveAfter);
+    return true;
+  }
+
+  const operation = (async () => {
+    cell.classList.add("saving");
+    try {
+      const response = await fetch(
+        `/api/cells/${encodeURIComponent(cell.dataset.foup)}/${cell.dataset.slot}/${cell.dataset.column}`,
+        {
+          method: "PATCH",
+          headers: apiHeaders(),
+          body: JSON.stringify({
+            value,
+            expected_version: Number(cell.dataset.version),
+          }),
+        }
+      );
+      const body = await response.json();
+      if (response.status === 409) {
+        applyCellUpdate(body.current, { force: true });
+        cell.classList.add("conflict");
+        window.setTimeout(() => cell.classList.remove("conflict"), 1600);
+        showToast(`충돌 감지: ${body.current.updated_by}님의 최신 값을 반영했습니다.`, "error");
+        return false;
+      }
+      if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+      applyCellUpdate(body, { force: true });
+      return true;
+    } catch (error) {
+      cell.textContent = original;
+      showToast(`저장 실패: ${error.message}`, "error");
+      return false;
+    } finally {
+      cell.classList.remove("saving");
+    }
+  })();
+  stateStore.pendingSaves.set(cell, operation);
+  try {
+    const result = await operation;
+    if (result && moveAfter) moveFocus(cell, moveAfter);
+    return result;
+  } finally {
+    if (stateStore.pendingSaves.get(cell) === operation) {
+      stateStore.pendingSaves.delete(cell);
+    }
+  }
+}
+
+function applyCellUpdate(update, { force = false } = {}) {
+  if (!update) return;
+  const key = cellKey(update.foup_id, update.slot_no, update.column_key);
+  const cell = getCellByKey(key);
+  if (!cell) return;
+  const isFocusedAndDirty = document.activeElement === cell && normalizeCellText(cell) !== (cell.dataset.original || "");
+  if (force || !isFocusedAndDirty) {
+    cell.textContent = update.value || "";
+    cell.dataset.original = update.value || "";
+  }
+  cell.dataset.version = String(update.version);
+  cell.dataset.updatedBy = update.updated_by || "";
+  cell.dataset.color = update.color || "";
+  cell.style.backgroundColor = update.color || "";
+}
+
+function moveFocus(cell, direction) {
+  const slot = Number(cell.dataset.slot);
+  let column = EDITABLE_COLUMNS.indexOf(cell.dataset.column);
+  let targetSlot = slot;
+  if (direction === "down") targetSlot += 1;
+  if (direction === "up") targetSlot -= 1;
+  if (direction === "right") {
+    column += 1;
+    if (column >= EDITABLE_COLUMNS.length) {
+      column = 0;
+      targetSlot += 1;
+    }
+  }
+  if (direction === "left") {
+    column -= 1;
+    if (column < 0) {
+      column = EDITABLE_COLUMNS.length - 1;
+      targetSlot -= 1;
+    }
+  }
+  if (targetSlot < 1 || targetSlot > 25) return;
+  const target = getCellByKey(cellKey(cell.dataset.foup, targetSlot, EDITABLE_COLUMNS[column]));
+  if (target) {
+    selectOnly(target);
+    target.focus();
+    placeCaretAtEnd(target);
+  }
+}
+
+function placeCaretAtEnd(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+async function applyColor(color) {
+  if (!stateStore.selected.size) {
+    showToast("먼저 색을 지정할 셀을 선택하세요.", "error");
+    return;
+  }
+  const selectedCells = [...stateStore.selected]
+    .map(getCellByKey)
+    .filter(Boolean);
+  await Promise.all(selectedCells.map((cell) => saveCell(cell)));
+  const updates = [];
+  selectedCells.forEach((cell) => {
+    updates.push({
+      foup_id: cell.dataset.foup,
+      slot_no: Number(cell.dataset.slot),
+      column_key: cell.dataset.column,
+      color: color || null,
+      expected_version: Number(cell.dataset.version),
+    });
+  });
+  await saveBatch(updates, color ? "예약 색상을 적용했습니다." : "셀 색상을 지웠습니다.");
+}
+
+async function saveBatch(updates, successMessage) {
+  if (!updates.length) return false;
+  try {
+    const response = await fetch("/api/cells/batch", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({ updates }),
+    });
+    const body = await response.json();
+    if (response.status === 409) {
+      applyCellUpdate(body.current, { force: true });
+      showToast("다른 사용자의 수정과 겹쳤습니다. 최신 값을 반영했습니다.", "error");
+      return false;
+    }
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    body.cells.forEach(applyCellUpdate);
+    showToast(successMessage);
+    return true;
+  } catch (error) {
+    showToast(`저장 실패: ${error.message}`, "error");
+    return false;
+  }
+}
+
+async function pasteRange(event, startCell) {
+  const text = event.clipboardData.getData("text/plain");
+  if (!text.includes("\t") && !text.includes("\n") && !text.includes("\r")) return;
+  event.preventDefault();
+  const rows = text.replace(/\r/g, "").split("\n");
+  if (rows.at(-1) === "") rows.pop();
+  const startSlot = Number(startCell.dataset.slot);
+  const startColumn = EDITABLE_COLUMNS.indexOf(startCell.dataset.column);
+  const updates = [];
+  let lastCell = startCell;
+  rows.forEach((rowText, rowOffset) => {
+    rowText.split("\t").forEach((value, columnOffset) => {
+      const slot = startSlot + rowOffset;
+      const columnIndex = startColumn + columnOffset;
+      if (slot > 25 || columnIndex >= EDITABLE_COLUMNS.length) return;
+      const target = getCellByKey(cellKey(startCell.dataset.foup, slot, EDITABLE_COLUMNS[columnIndex]));
+      if (!target) return;
+      updates.push({
+        foup_id: target.dataset.foup,
+        slot_no: slot,
+        column_key: target.dataset.column,
+        value,
+        expected_version: Number(target.dataset.version),
+      });
+      lastCell = target;
+    });
+  });
+  const saved = await saveBatch(updates, `${updates.length}개 셀을 붙여넣었습니다.`);
+  if (saved) selectRange(cellKey(startCell.dataset.foup, startCell.dataset.slot, startCell.dataset.column), lastCell);
+}
+
+async function openHistory(cell) {
+  const { foup, slot, wafer } = cell.dataset;
+  elements.historyDrawer.classList.add("open");
+  elements.historyDrawer.setAttribute("aria-hidden", "false");
+  elements.historyTitle.textContent = "Wafer History";
+  elements.historySubtitle.textContent = `${wafer} · ${foup} / Slot ${slot}`;
+  elements.historyContent.innerHTML = '<p class="history-loading">이력을 불러오는 중입니다.</p>';
+  try {
+    const response = await fetch(`/api/foups/${encodeURIComponent(foup)}/slots/${slot}/history`, { cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    renderHistory(body);
+  } catch (error) {
+    elements.historyContent.textContent = `이력을 불러오지 못했습니다. ${error.message}`;
+  }
+}
+
+function renderHistory(data) {
+  elements.historyContent.replaceChildren();
+  if (!data.history || !data.history.length) {
+    elements.historyContent.appendChild(textNode("p", "history-loading", "이 Slot에는 현재 Wafer가 없습니다."));
+    return;
+  }
+  const list = document.createElement("ol");
+  list.className = "timeline";
+  data.history.forEach((item, index) => {
+    const li = document.createElement("li");
+    li.className = `timeline-item ${index === data.history.length - 1 ? "current" : ""}`;
+    li.appendChild(textNode("span", "timeline-dot", ""));
+    li.appendChild(textNode("p", "timeline-step", item.step));
+    const meta = document.createElement("div");
+    meta.className = "timeline-meta";
+    meta.append(
+      textNode("span", "", formatDateTime(item.timestamp)),
+      textNode("span", "", item.tool),
+      textNode("span", `result-pill ${item.result === "RUN" ? "run" : ""}`, item.result)
+    );
+    li.appendChild(meta);
+    list.appendChild(li);
+  });
+  elements.historyContent.appendChild(list);
+}
+
+function closeHistory() {
+  elements.historyDrawer.classList.remove("open");
+  elements.historyDrawer.setAttribute("aria-hidden", "true");
+}
+
+function connectWebSocket() {
+  window.clearTimeout(stateStore.reconnectTimer);
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws/updates`);
+  socket.addEventListener("open", () => setConnection("online", "실시간 연결"));
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "cell_updated") applyCellUpdate(message.cell);
+    if (message.type === "cells_updated") message.cells.forEach(applyCellUpdate);
+  });
+  socket.addEventListener("close", () => {
+    setConnection("offline", "재연결 중");
+    stateStore.reconnectTimer = window.setTimeout(connectWebSocket, 1800);
+  });
+  socket.addEventListener("error", () => socket.close());
+}
+
+elements.grid.addEventListener("mousedown", (event) => {
+  const cell = event.target.closest(".editable-cell");
+  if (!cell) return;
+  if (event.shiftKey && stateStore.anchor) {
+    selectRange(stateStore.anchor, cell, event.metaKey || event.ctrlKey);
+  } else if (event.metaKey || event.ctrlKey) {
+    toggleSelection(cell);
+  } else {
+    selectOnly(cell);
+  }
+  stateStore.dragging = true;
+});
+
+elements.grid.addEventListener("mouseover", (event) => {
+  if (!stateStore.dragging || !stateStore.anchor) return;
+  const cell = event.target.closest(".editable-cell");
+  if (cell) selectRange(stateStore.anchor, cell);
+});
+
+document.addEventListener("mouseup", () => {
+  stateStore.dragging = false;
+});
+
+elements.grid.addEventListener("focusin", (event) => {
+  const cell = event.target.closest(".editable-cell");
+  if (cell) cell.dataset.focusValue = normalizeCellText(cell);
+});
+
+elements.grid.addEventListener("focusout", (event) => {
+  const cell = event.target.closest(".editable-cell");
+  if (cell) void saveCell(cell);
+});
+
+elements.grid.addEventListener("keydown", (event) => {
+  const waferCell = event.target.closest(".wafer-cell.has-wafer");
+  if (waferCell && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    void openHistory(waferCell);
+    return;
+  }
+  const cell = event.target.closest(".editable-cell");
+  if (!cell) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cell.textContent = cell.dataset.original || "";
+    cell.blur();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    void saveCell(cell, { moveAfter: event.shiftKey ? "up" : "down" });
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    void saveCell(cell, { moveAfter: event.shiftKey ? "left" : "right" });
+  }
+});
+
+elements.grid.addEventListener("paste", (event) => {
+  const cell = event.target.closest(".editable-cell");
+  if (cell) void pasteRange(event, cell);
+});
+
+elements.grid.addEventListener("click", (event) => {
+  const waferCell = event.target.closest(".wafer-cell.has-wafer");
+  if (waferCell) void openHistory(waferCell);
+});
+
+elements.palette.addEventListener("click", (event) => {
+  const button = event.target.closest(".color-button");
+  if (button) void applyColor(button.dataset.color);
+});
+
+elements.search.addEventListener("input", applyFilters);
+elements.statusFilter.addEventListener("change", applyFilters);
+elements.refresh.addEventListener("click", () => void loadState({ announce: true }));
+elements.userName.addEventListener("change", () => {
+  localStorage.setItem("foup-user-name", userName());
+  elements.userName.value = userName();
+});
+
+document.querySelectorAll("[data-close-drawer]").forEach((button) => button.addEventListener("click", closeHistory));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.historyDrawer.classList.contains("open")) closeHistory();
+});
+
+elements.userName.value = localStorage.getItem("foup-user-name") || "익명 사용자";
+void loadState();
+connectWebSocket();

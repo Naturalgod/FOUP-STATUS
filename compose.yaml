@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: foup_status
+      POSTGRES_USER: foup_user
+      POSTGRES_PASSWORD: local-dev-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foup_user -d foup_status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - foup_pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://foup_user:local-dev-only@db:5432/foup_status
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  foup_pgdata:
+

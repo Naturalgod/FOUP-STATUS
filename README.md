@@ -1,0 +1,113 @@
+# FOUP Control Sheet
+
+기존 Google Sheet의 2×2 FOUP 배치와 25 Slot 입력 방식을 유지하면서, 사내 실시간 FOUP/Wafer 정보와 사용 계획을 함께 보여주는 FastAPI 앱입니다. 별도 프론트엔드 빌드 서버 없이 FastAPI 한 프로세스가 API와 화면을 함께 서빙합니다.
+
+## 구현 범위
+
+- `Sub / 사용자 / 세부사항` 셀 직접 편집 및 자동 저장
+- Shift 범위 선택, Ctrl/⌘ 다중 선택, 다중 셀 붙여넣기
+- 선택 셀 배경색 지정·삭제(향후 사용 예약 표시)
+- FOUP 위치, Slot별 현재 Wafer, 현재 Step 표시
+- Wafer 클릭 시 공정 History 패널 표시
+- WebSocket 기반 다중 사용자 실시간 갱신
+- 셀 버전 기반 동시 수정 충돌 방지와 변경 이력 저장
+- PostgreSQL 운영 지원, SQLite 로컬 데모 지원
+- 사내 실시간 API 장애 시에도 계획 편집은 계속 가능한 분리 구조
+
+## 바로 실행
+
+Python 3.9 이상에서 실행합니다.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+브라우저에서 `http://127.0.0.1:8000`으로 접속합니다. API 문서는 `http://127.0.0.1:8000/api/docs`입니다. 환경 변수가 없으면 `data/foup_manager.db`와 데모 실시간 데이터를 사용합니다.
+
+## PostgreSQL 연결
+
+운영 서버에 아래 환경 변수를 지정하면 SQLite 대신 PostgreSQL을 사용합니다. 앱 시작 시 `foups`, `plan_cells`, `cell_history` 테이블과 인덱스를 생성하고, 빈 DB에는 현재 Google Sheet의 네 FOUP를 초기 데이터로 넣습니다.
+
+```bash
+export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@DB_HOST:5432/DB_NAME'
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+로컬 PostgreSQL까지 한 번에 확인하려면 다음 명령을 사용합니다.
+
+```bash
+docker compose up --build
+```
+
+## 사내 실시간 데이터 연동
+
+`app/live_data.py`의 `HttpLiveDataAdapter`는 아래 계약을 사용합니다.
+
+### FOUP Snapshot
+
+`GET {FOUP_LIVE_API_URL}/foups/snapshot?ids=ENG10000,ENG20002`
+
+```json
+{
+  "foups": [
+    {
+      "foup_id": "ENG10000",
+      "location": "FAB 1 · STK-03",
+      "location_type": "STOCKER",
+      "status": "ONLINE",
+      "synced_at": "2026-09-17T09:00:00+00:00",
+      "slots": [
+        {
+          "slot_no": 1,
+          "wafer_id": "R7QAA03.01",
+          "current_step": "ALD W 120",
+          "last_process": "PASS",
+          "history_count": 4
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Wafer History
+
+`GET {FOUP_LIVE_API_URL}/foups/{foup_id}/slots/{slot_no}/history`
+
+```json
+{
+  "foup_id": "ENG10000",
+  "slot_no": 1,
+  "wafer_id": "R7QAA03.01",
+  "history": [
+    {
+      "timestamp": "2026-09-17T08:40:00+00:00",
+      "step": "PRE CLEAN",
+      "tool": "CLN-14",
+      "result": "PASS"
+    }
+  ]
+}
+```
+
+연결 설정:
+
+```bash
+export FOUP_LIVE_API_URL='https://internal-api.example'
+export FOUP_LIVE_API_TOKEN='replace-with-service-token'
+export FOUP_LIVE_API_TIMEOUT='5'
+```
+
+사내 응답 형식이 다르면 `HttpLiveDataAdapter` 내부의 두 메서드에서 회사 스키마를 위 계약으로 변환하면 됩니다. 토큰은 브라우저로 전달되지 않습니다.
+
+## 검증
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+운영 배포 전에는 사내 인증 프록시/SSO에서 사용자 이름을 검증하고, 현재 화면이 보내는 `X-User`를 신뢰 가능한 사내 사용자 정보로 치환해야 합니다.
+
