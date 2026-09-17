@@ -40,6 +40,14 @@ class FoupAppTestCase(unittest.TestCase):
         self.assertEqual(body["foups"][0]["slots"][0]["cells"]["assignee"]["value"], "김철수")
         self.assertEqual(len(body["foups"][0]["slots"]), 25)
 
+    def test_root_exposes_sheet_and_live_view_controls(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("계획 시트", response.text)
+        self.assertIn("실시간 통합", response.text)
+        self.assertIn("연두색 셀", response.text)
+        self.assertIn("이 파일은 FastAPI 서버로 열어야 합니다", response.text)
+
     def test_direct_cell_edit_and_optimistic_conflict(self) -> None:
         response = self.client.patch(
             "/api/cells/ENG10000/11/assignee",

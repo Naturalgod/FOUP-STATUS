@@ -9,6 +9,7 @@ const stateStore = {
   toastTimer: null,
   reconnectTimer: null,
   pendingSaves: new WeakMap(),
+  viewMode: localStorage.getItem("foup-view-mode") || "sheet",
 };
 
 const elements = {
@@ -34,6 +35,7 @@ const elements = {
   statPlans: document.getElementById("stat-plans"),
   liveMode: document.getElementById("live-mode"),
   lastSync: document.getElementById("last-sync"),
+  viewButtons: [...document.querySelectorAll(".view-button")],
 };
 
 function cellKey(foupId, slotNo, columnKey) {
@@ -87,6 +89,18 @@ function setConnection(status, label) {
   elements.connectionPill.classList.toggle("online", status === "online");
   elements.connectionPill.classList.toggle("offline", status === "offline");
   elements.connectionLabel.textContent = label;
+}
+
+function setViewMode(mode) {
+  const normalized = mode === "live" ? "live" : "sheet";
+  stateStore.viewMode = normalized;
+  document.body.dataset.view = normalized;
+  elements.viewButtons.forEach((button) => {
+    const active = button.dataset.view === normalized;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  localStorage.setItem("foup-view-mode", normalized);
 }
 
 async function loadState({ announce = false } = {}) {
@@ -189,20 +203,22 @@ function buildFoupCard(foup) {
   table.setAttribute("aria-label", `${foup.id} Slot 계획`);
   table.innerHTML = `
     <colgroup>
-      <col class="slot-col"><col class="wafer-col"><col class="step-col">
+      <col class="slot-col"><col class="wafer-col live-column"><col class="step-col live-column">
       <col class="sub-col"><col class="user-col"><col class="detail-col">
     </colgroup>
     <thead><tr>
-      <th>Slot</th><th>현재 Wafer</th><th>현재 Step</th>
-      <th>Sub</th><th>사용자</th><th>세부사항</th>
+      <th>Slot</th><th class="live-column">현재 Wafer</th><th class="live-column">현재 Step</th>
+      <th class="editable-heading">Sub <span>✎</span></th><th class="editable-heading">사용자 <span>✎</span></th><th class="editable-heading">세부사항 <span>✎</span></th>
     </tr></thead>`;
   const tbody = document.createElement("tbody");
 
   foup.slots.forEach((slot) => {
     const row = document.createElement("tr");
-    row.appendChild(textNode("td", "slot-cell", String(slot.slot_no)));
+    const slotCell = textNode("td", `slot-cell ${slot.live.wafer_id ? "loaded-slot" : ""}`, String(slot.slot_no));
+    if (slot.live.wafer_id) slotCell.title = `현재 Wafer: ${slot.live.wafer_id}`;
+    row.appendChild(slotCell);
 
-    const wafer = textNode("td", `live-cell wafer-cell ${slot.live.wafer_id ? "has-wafer" : "empty-wafer"}`, slot.live.wafer_id || "—");
+    const wafer = textNode("td", `live-cell live-column wafer-cell ${slot.live.wafer_id ? "has-wafer" : "empty-wafer"}`, slot.live.wafer_id || "—");
     if (slot.live.wafer_id) {
       wafer.tabIndex = 0;
       wafer.dataset.foup = foup.id;
@@ -211,7 +227,7 @@ function buildFoupCard(foup) {
       wafer.title = "Wafer History 열기";
     }
     row.appendChild(wafer);
-    row.appendChild(textNode("td", "live-cell", slot.live.current_step || "—"));
+    row.appendChild(textNode("td", "live-cell live-column", slot.live.current_step || "—"));
 
     EDITABLE_COLUMNS.forEach((columnKey) => {
       const cell = slot.cells[columnKey];
@@ -225,6 +241,8 @@ function buildFoupCard(foup) {
       td.dataset.version = String(cell.version);
       td.dataset.original = cell.value || "";
       td.dataset.updatedBy = cell.updated_by || "";
+      td.dataset.placeholder = "입력";
+      td.setAttribute("aria-placeholder", "입력");
       td.setAttribute("role", "gridcell");
       td.setAttribute("aria-label", `${foup.id} ${slot.slot_no}번 ${columnKey}`);
       if (cell.color) {
@@ -674,6 +692,9 @@ elements.palette.addEventListener("click", (event) => {
 elements.search.addEventListener("input", applyFilters);
 elements.statusFilter.addEventListener("change", applyFilters);
 elements.refresh.addEventListener("click", () => void loadState({ announce: true }));
+elements.viewButtons.forEach((button) => {
+  button.addEventListener("click", () => setViewMode(button.dataset.view));
+});
 elements.userName.addEventListener("change", () => {
   localStorage.setItem("foup-user-name", userName());
   elements.userName.value = userName();
@@ -685,5 +706,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 elements.userName.value = localStorage.getItem("foup-user-name") || "익명 사용자";
+setViewMode(stateStore.viewMode);
 void loadState();
 connectWebSocket();

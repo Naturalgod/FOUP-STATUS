@@ -5,6 +5,8 @@
 ## 구현 범위
 
 - `Sub / 사용자 / 세부사항` 셀 직접 편집 및 자동 저장
+- 기본 `계획 시트` 보기에서 기존 Google Sheet의 `Slot / Sub / 사용자 / 세부사항` 구조 유지
+- `실시간 통합` 보기에서 현재 Wafer와 현재 Step 열을 함께 확인
 - Shift 범위 선택, Ctrl/⌘ 다중 선택, 다중 셀 붙여넣기
 - 선택 셀 배경색 지정·삭제(향후 사용 예약 표시)
 - FOUP 위치, Slot별 현재 Wafer, 현재 Step 표시
@@ -26,6 +28,8 @@ uvicorn app.main:app --reload
 ```
 
 브라우저에서 `http://127.0.0.1:8000`으로 접속합니다. API 문서는 `http://127.0.0.1:8000/api/docs`입니다. 환경 변수가 없으면 `data/foup_manager.db`와 데모 실시간 데이터를 사용합니다.
+
+> `app/static/index.html`을 Finder에서 직접 열면 API가 연결되지 않습니다. 반드시 위처럼 FastAPI를 실행하고 `http://127.0.0.1:8000`으로 접속하세요. 직접 열었을 때도 이 실행 방법을 안내하는 화면이 표시됩니다.
 
 ## PostgreSQL 연결
 
@@ -110,4 +114,3 @@ python3 -m unittest discover -s tests -v
 ```
 
 운영 배포 전에는 사내 인증 프록시/SSO에서 사용자 이름을 검증하고, 현재 화면이 보내는 `X-User`를 신뢰 가능한 사내 사용자 정보로 치환해야 합니다.
-
