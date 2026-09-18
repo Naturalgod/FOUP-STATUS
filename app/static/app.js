@@ -523,6 +523,82 @@ async function saveBatch(updates, successMessage) {
   }
 }
 
+function escapeClipboardHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function selectedRangeMatrix() {
+  const selectedCells = [...stateStore.selected]
+    .map(getCellByKey)
+    .filter(Boolean);
+  if (!selectedCells.length) return null;
+
+  const foupIds = new Set(selectedCells.map((cell) => cell.dataset.foup));
+  if (foupIds.size !== 1) {
+    showToast("복사는 같은 FOUP 안의 셀만 선택할 수 있습니다.", "error");
+    return null;
+  }
+
+  const foupId = selectedCells[0].dataset.foup;
+  const slots = selectedCells.map((cell) => Number(cell.dataset.slot));
+  const columns = selectedCells.map((cell) => EDITABLE_COLUMNS.indexOf(cell.dataset.column));
+  const minSlot = Math.min(...slots);
+  const maxSlot = Math.max(...slots);
+  const minColumn = Math.min(...columns);
+  const maxColumn = Math.max(...columns);
+  const expectedCount = (maxSlot - minSlot + 1) * (maxColumn - minColumn + 1);
+
+  if (expectedCount !== selectedCells.length) {
+    showToast("엑셀처럼 연속된 직사각형 범위를 선택해 복사하세요.", "error");
+    return null;
+  }
+
+  const matrix = [];
+  for (let slot = minSlot; slot <= maxSlot; slot += 1) {
+    const row = [];
+    for (let column = minColumn; column <= maxColumn; column += 1) {
+      const key = cellKey(foupId, slot, EDITABLE_COLUMNS[column]);
+      if (!stateStore.selected.has(key)) {
+        showToast("엑셀처럼 연속된 직사각형 범위를 선택해 복사하세요.", "error");
+        return null;
+      }
+      const cell = getCellByKey(key);
+      row.push(cell ? normalizeCellText(cell) : "");
+    }
+    matrix.push(row);
+  }
+  return matrix;
+}
+
+function copySelectedRange(event) {
+  const activeCell = document.activeElement?.closest?.(".editable-cell");
+  const browserSelection = window.getSelection();
+  if (
+    activeCell &&
+    browserSelection &&
+    !browserSelection.isCollapsed &&
+    browserSelection.toString()
+  ) {
+    return;
+  }
+
+  const matrix = selectedRangeMatrix();
+  if (!matrix || !event.clipboardData) return;
+  event.preventDefault();
+
+  const plainText = matrix.map((row) => row.join("\t")).join("\n");
+  const htmlTable = `<table>${matrix
+    .map((row) => `<tr>${row.map((value) => `<td>${escapeClipboardHtml(value)}</td>`).join("")}</tr>`)
+    .join("")}</table>`;
+  event.clipboardData.setData("text/plain", plainText);
+  event.clipboardData.setData("text/html", htmlTable);
+  showToast(`${matrix.length}행 × ${matrix[0].length}열을 복사했습니다.`);
+}
+
 async function pasteRange(event, startCell) {
   const text = event.clipboardData.getData("text/plain");
   if (!text.includes("\t") && !text.includes("\n") && !text.includes("\r")) return;
@@ -678,6 +754,8 @@ elements.grid.addEventListener("paste", (event) => {
   const cell = event.target.closest(".editable-cell");
   if (cell) void pasteRange(event, cell);
 });
+
+document.addEventListener("copy", copySelectedRange);
 
 elements.grid.addEventListener("click", (event) => {
   const waferCell = event.target.closest(".wafer-cell.has-wafer");
