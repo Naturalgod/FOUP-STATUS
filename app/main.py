@@ -76,8 +76,13 @@ def _validate_patch(data: Dict[str, Any]) -> None:
 
 
 def _actor_name(header_value: Optional[str]) -> str:
-    decoded = unquote(header_value or "익명 사용자").strip()
-    return decoded[:80] or "익명 사용자"
+    decoded = unquote(header_value or "").strip()
+    if not decoded or decoded == "익명 사용자":
+        raise HTTPException(
+            status_code=400,
+            detail="수정 이력을 남기려면 편집자 이름을 먼저 입력하세요.",
+        )
+    return decoded[:80]
 
 
 def _empty_live(foup_id: str, total_slots: int) -> Dict[str, Any]:

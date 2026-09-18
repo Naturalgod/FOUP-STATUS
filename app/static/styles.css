@@ -382,6 +382,15 @@ button {
   font-size: 12px;
 }
 
+.user-box strong {
+  color: #b73535;
+}
+
+.user-box input.editor-required {
+  border-color: #c94a4a;
+  box-shadow: 0 0 0 2px rgba(201, 74, 74, 0.13);
+}
+
 .color-row {
   min-height: 48px;
 }

@@ -19,6 +19,7 @@ class FoupAppTestCase(unittest.TestCase):
             create_app(database_path=database_path, live_adapter=DemoLiveDataAdapter())
         )
         self.client = self.client_context.__enter__()
+        self.client.headers.update({"X-User": quote("테스트 사용자")})
 
     def tearDown(self) -> None:
         self.client_context.__exit__(None, None, None)
@@ -80,7 +81,17 @@ class FoupAppTestCase(unittest.TestCase):
         self.assertIn("내용 지우기", response.text)
         self.assertIn("되돌리기", response.text)
         self.assertIn("변경 이력", response.text)
+        self.assertIn("편집자 이름을 입력한 뒤", response.text)
         self.assertIn("이 파일은 FastAPI 서버로 열어야 합니다", response.text)
+
+    def test_cell_mutation_requires_an_editor_name(self) -> None:
+        response = self.client.patch(
+            "/api/cells/ENG10000/1/details",
+            headers={"X-User": ""},
+            json={"value": "이름 없는 수정", "expected_version": 0},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("편집자 이름", response.json()["detail"])
 
     def test_batch_operation_can_be_undone_as_one_safe_action(self) -> None:
         changed = self.client.post(

@@ -11,6 +11,7 @@ const stateStore = {
   pendingSaves: new WeakMap(),
   undoStack: [],
   undoing: false,
+  waitingForEditor: new Set(),
   viewMode: localStorage.getItem("foup-view-mode") || "sheet",
 };
 
@@ -48,7 +49,20 @@ function cellKey(foupId, slotNo, columnKey) {
 }
 
 function userName() {
-  return elements.userName.value.trim() || "익명 사용자";
+  return elements.userName.value.trim();
+}
+
+function requireEditorName(waitingCell = null) {
+  const name = userName();
+  if (name && name !== "익명 사용자") {
+    elements.userName.classList.remove("editor-required");
+    return name;
+  }
+  if (waitingCell) stateStore.waitingForEditor.add(waitingCell);
+  elements.userName.classList.add("editor-required");
+  showToast("수정 이력을 남기려면 편집자 이름을 먼저 입력하세요.", "error");
+  elements.userName.focus();
+  return null;
 }
 
 function apiHeaders() {
@@ -396,6 +410,8 @@ async function saveCell(cell, { moveAfter = null } = {}) {
     if (moveAfter) moveFocus(cell, moveAfter);
     return true;
   }
+  if (!requireEditorName(cell)) return false;
+  stateStore.waitingForEditor.delete(cell);
 
   const operation = (async () => {
     cell.classList.add("saving");
@@ -521,6 +537,7 @@ async function applyColor(color) {
 
 async function saveBatch(updates, successMessage, { force = false } = {}) {
   if (!updates.length) return false;
+  if (!requireEditorName()) return false;
   try {
     const response = await fetch("/api/cells/batch", {
       method: "POST",
@@ -546,6 +563,7 @@ async function saveBatch(updates, successMessage, { force = false } = {}) {
 
 async function undoLastOperation({ pendingSave = null } = {}) {
   if (stateStore.undoing) return;
+  if (!requireEditorName()) return;
   stateStore.undoing = true;
   updateUndoButton();
   try {
@@ -826,6 +844,7 @@ async function openCellHistory() {
 }
 
 async function restoreCellHistory(cell, historyId, expectedVersion, button) {
+  if (!requireEditorName()) return;
   button.disabled = true;
   try {
     const response = await fetch(
@@ -1006,9 +1025,30 @@ elements.cellHistory.addEventListener("click", () => void openCellHistory());
 elements.viewButtons.forEach((button) => {
   button.addEventListener("click", () => setViewMode(button.dataset.view));
 });
+elements.userName.addEventListener("input", () => {
+  if (userName() && userName() !== "익명 사용자") {
+    elements.userName.classList.remove("editor-required");
+  }
+});
 elements.userName.addEventListener("change", () => {
-  localStorage.setItem("foup-user-name", userName());
-  elements.userName.value = userName();
+  const name = userName();
+  if (!name || name === "익명 사용자") {
+    elements.userName.value = "";
+    localStorage.removeItem("foup-user-name");
+    return;
+  }
+  localStorage.setItem("foup-user-name", name);
+  elements.userName.value = name;
+  elements.userName.classList.remove("editor-required");
+  const waitingCells = [...stateStore.waitingForEditor];
+  stateStore.waitingForEditor.clear();
+  waitingCells.forEach((cell) => void saveCell(cell));
+});
+elements.userName.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    elements.userName.blur();
+  }
 });
 
 document.querySelectorAll("[data-close-drawer]").forEach((button) => button.addEventListener("click", closeHistory));
@@ -1032,7 +1072,9 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.historyDrawer.classList.contains("open")) closeHistory();
 });
 
-elements.userName.value = localStorage.getItem("foup-user-name") || "익명 사용자";
+const savedUserName = localStorage.getItem("foup-user-name") || "";
+elements.userName.value = savedUserName === "익명 사용자" ? "" : savedUserName;
+if (savedUserName === "익명 사용자") localStorage.removeItem("foup-user-name");
 setViewMode(stateStore.viewMode);
 updateUndoButton();
 void loadState();
