@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 
 from app.live_data import DemoLiveDataAdapter
+from app.db import Database
 from app.main import create_app
 
 
@@ -40,6 +42,34 @@ class FoupAppTestCase(unittest.TestCase):
         self.assertEqual(body["foups"][0]["slots"][0]["cells"]["assignee"]["value"], "김철수")
         self.assertEqual(len(body["foups"][0]["slots"]), 25)
 
+    def test_existing_history_table_is_migrated_for_operation_undo(self) -> None:
+        legacy_path = str(Path(self.temp_dir.name) / "legacy.db")
+        with sqlite3.connect(legacy_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE cell_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    foup_id TEXT NOT NULL,
+                    slot_no INTEGER NOT NULL,
+                    column_key TEXT NOT NULL,
+                    old_value TEXT NOT NULL,
+                    new_value TEXT NOT NULL,
+                    old_color TEXT,
+                    new_color TEXT,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+        Database(legacy_path).initialize()
+        with sqlite3.connect(legacy_path) as connection:
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(cell_history)")
+            }
+        self.assertTrue(
+            {"operation_id", "operation_kind", "undo_of_operation_id"}.issubset(columns)
+        )
+
     def test_root_exposes_sheet_and_live_view_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -48,7 +78,101 @@ class FoupAppTestCase(unittest.TestCase):
         self.assertIn("연두색 셀", response.text)
         self.assertIn("복사·붙여넣기", response.text)
         self.assertIn("내용 지우기", response.text)
+        self.assertIn("되돌리기", response.text)
+        self.assertIn("변경 이력", response.text)
         self.assertIn("이 파일은 FastAPI 서버로 열어야 합니다", response.text)
+
+    def test_batch_operation_can_be_undone_as_one_safe_action(self) -> None:
+        changed = self.client.post(
+            "/api/cells/batch",
+            headers={"X-User": quote("삭제 작업자")},
+            json={
+                "updates": [
+                    {
+                        "foup_id": "ENG10000",
+                        "slot_no": 1,
+                        "column_key": "planned_sub",
+                        "value": "",
+                        "expected_version": 0,
+                    },
+                    {
+                        "foup_id": "ENG10000",
+                        "slot_no": 1,
+                        "column_key": "assignee",
+                        "value": "",
+                        "expected_version": 0,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(changed.status_code, 200)
+        operation_id = changed.json()["operation_id"]
+        self.assertTrue(operation_id)
+        self.assertEqual(
+            {cell["operation_id"] for cell in changed.json()["cells"]},
+            {operation_id},
+        )
+
+        undone = self.client.post(
+            f"/api/operations/{operation_id}/undo",
+            headers={"X-User": quote("복구 담당자")},
+        )
+        self.assertEqual(undone.status_code, 200)
+        self.assertEqual(undone.json()["updated"], 2)
+        self.assertEqual(
+            [cell["value"] for cell in undone.json()["cells"]],
+            ["RECLAIM", "김철수"],
+        )
+        self.assertTrue(
+            all(cell["operation_kind"] == "undo" for cell in undone.json()["cells"])
+        )
+        self.assertTrue(
+            all(
+                cell["undo_of_operation_id"] == operation_id
+                for cell in undone.json()["cells"]
+            )
+        )
+
+    def test_undo_blocks_when_a_cell_was_modified_after_the_operation(self) -> None:
+        first = self.client.patch(
+            "/api/cells/ENG10000/1/details",
+            json={"value": "", "expected_version": 0},
+        )
+        operation_id = first.json()["operation_id"]
+        later = self.client.patch(
+            "/api/cells/ENG10000/1/details",
+            json={"value": "새 작업", "expected_version": 1},
+        )
+        self.assertEqual(later.status_code, 200)
+
+        blocked = self.client.post(f"/api/operations/{operation_id}/undo")
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.json()["current"]["value"], "새 작업")
+
+    def test_cell_history_can_restore_the_state_before_a_deletion(self) -> None:
+        deleted = self.client.patch(
+            "/api/cells/ENG10000/1/details",
+            headers={"X-User": quote("실수한 사용자")},
+            json={"value": "", "expected_version": 0},
+        )
+        self.assertEqual(deleted.status_code, 200)
+
+        history = self.client.get("/api/cells/ENG10000/1/details/history")
+        self.assertEqual(history.status_code, 200)
+        history_body = history.json()
+        self.assertEqual(history_body["current"]["version"], 1)
+        self.assertEqual(history_body["items"][0]["old_value"], "SiCO 평가")
+        self.assertEqual(history_body["items"][0]["new_value"], "")
+
+        restored = self.client.post(
+            f"/api/cells/ENG10000/1/details/history/{history_body['items'][0]['id']}/restore",
+            headers={"X-User": quote("복구 담당자")},
+            json={"expected_version": history_body["current"]["version"]},
+        )
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.json()["cell"]["value"], "SiCO 평가")
+        self.assertEqual(restored.json()["cell"]["operation_kind"], "restore")
+        self.assertEqual(restored.json()["cell"]["updated_by"], "복구 담당자")
 
     def test_batch_clear_values_preserves_cell_color(self) -> None:
         color = self.client.patch(

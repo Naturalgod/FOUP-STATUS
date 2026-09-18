@@ -21,3 +21,6 @@ class BatchCellPatch(CellPatch):
 class BatchPatchRequest(BaseModel):
     updates: List[BatchCellPatch] = Field(min_length=1, max_length=500)
 
+
+class CellRestoreRequest(BaseModel):
+    expected_version: int = Field(ge=0)

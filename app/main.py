@@ -12,9 +12,17 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, W
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import EDITABLE_COLUMNS, UNSET, CellConflict, Database, UnknownFoup
+from .db import (
+    EDITABLE_COLUMNS,
+    UNSET,
+    CellConflict,
+    Database,
+    UnknownFoup,
+    UnknownHistory,
+    UnknownOperation,
+)
 from .live_data import LiveDataAdapter, build_live_adapter, utc_now
-from .schemas import BatchPatchRequest, CellPatch
+from .schemas import BatchPatchRequest, CellPatch, CellRestoreRequest
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -284,7 +292,91 @@ def create_app(
                 content={"detail": "일괄 수정 중 충돌이 발생했습니다.", "current": exc.current},
             )
         await manager.broadcast({"type": "cells_updated", "cells": results})
-        return {"updated": len(results), "cells": results}
+        return {
+            "updated": len(results),
+            "cells": results,
+            "operation_id": results[0]["operation_id"] if results else None,
+        }
+
+    @app.post("/api/operations/{operation_id}/undo")
+    async def undo_operation(
+        operation_id: str,
+        x_user: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        if not operation_id or len(operation_id) > 128:
+            raise HTTPException(status_code=422, detail="유효하지 않은 작업 ID입니다.")
+        try:
+            results = database.undo_operation(
+                operation_id,
+                updated_by=_actor_name(x_user),
+            )
+        except UnknownOperation:
+            raise HTTPException(status_code=404, detail="되돌릴 작업을 찾을 수 없습니다.")
+        except CellConflict as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "이후 수정된 셀이 있어 자동으로 되돌릴 수 없습니다.",
+                    "current": exc.current,
+                },
+            )
+        await manager.broadcast({"type": "cells_updated", "cells": results})
+        return {
+            "updated": len(results),
+            "cells": results,
+            "operation_id": results[0]["operation_id"] if results else None,
+            "undo_of_operation_id": operation_id,
+        }
+
+    @app.get("/api/cells/{foup_id}/{slot_no}/{column_key}/history")
+    async def cell_history(
+        foup_id: str,
+        slot_no: int,
+        column_key: str,
+        limit: int = Query(default=30, ge=1, le=100),
+    ) -> Dict[str, Any]:
+        if not 1 <= slot_no <= 25:
+            raise HTTPException(status_code=422, detail="slot_no는 1~25 범위여야 합니다.")
+        if column_key not in EDITABLE_COLUMNS:
+            raise HTTPException(status_code=422, detail="수정할 수 없는 열입니다.")
+        if foup_id not in {item["id"] for item in database.list_foups()}:
+            raise HTTPException(status_code=404, detail="FOUP을 찾을 수 없습니다.")
+        return database.cell_activity(foup_id, slot_no, column_key, limit)
+
+    @app.post("/api/cells/{foup_id}/{slot_no}/{column_key}/history/{history_id}/restore")
+    async def restore_cell_history(
+        foup_id: str,
+        slot_no: int,
+        column_key: str,
+        history_id: int,
+        payload: CellRestoreRequest,
+        x_user: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        if not 1 <= slot_no <= 25:
+            raise HTTPException(status_code=422, detail="slot_no는 1~25 범위여야 합니다.")
+        if column_key not in EDITABLE_COLUMNS:
+            raise HTTPException(status_code=422, detail="수정할 수 없는 열입니다.")
+        try:
+            result = database.restore_history(
+                history_id=history_id,
+                foup_id=foup_id,
+                slot_no=slot_no,
+                column_key=column_key,
+                expected_version=payload.expected_version,
+                updated_by=_actor_name(x_user),
+            )
+        except UnknownHistory:
+            raise HTTPException(status_code=404, detail="복원할 변경 이력을 찾을 수 없습니다.")
+        except CellConflict as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "이력을 연 뒤 다른 사용자가 수정했습니다.",
+                    "current": exc.current,
+                },
+            )
+        await manager.broadcast({"type": "cell_updated", "cell": result})
+        return {"cell": result, "operation_id": result["operation_id"]}
 
     @app.get("/api/foups/{foup_id}/slots/{slot_no}/history")
     async def wafer_history(foup_id: str, slot_no: int) -> Dict[str, Any]:

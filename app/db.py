@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from uuid import uuid4
 
 
 EDITABLE_COLUMNS = ("planned_sub", "assignee", "details")
@@ -21,6 +22,14 @@ class CellConflict(Exception):
 
 
 class UnknownFoup(Exception):
+    pass
+
+
+class UnknownOperation(Exception):
+    pass
+
+
+class UnknownHistory(Exception):
     pass
 
 
@@ -120,7 +129,10 @@ class Database:
                 old_color TEXT,
                 new_color TEXT,
                 updated_by TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                operation_id TEXT,
+                operation_kind TEXT NOT NULL DEFAULT 'edit',
+                undo_of_operation_id TEXT
             );
             """
             if self.is_postgres
@@ -136,7 +148,10 @@ class Database:
                 old_color TEXT,
                 new_color TEXT,
                 updated_by TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                operation_id TEXT,
+                operation_kind TEXT NOT NULL DEFAULT 'edit',
+                undo_of_operation_id TEXT
             );
             """
         )
@@ -152,12 +167,42 @@ class Database:
             else:
                 connection.executescript(common_schema + history_schema + index_schema)
 
+            self._ensure_history_columns(connection)
+
             count_row = self._execute(
                 connection, "SELECT COUNT(*) AS row_count FROM foups"
             ).fetchone()
             count = count_row["row_count"] if self.is_postgres else count_row[0]
             if count == 0:
                 self._seed(connection)
+
+    def _ensure_history_columns(self, connection: Any) -> None:
+        columns = {
+            "operation_id": "TEXT",
+            "operation_kind": "TEXT NOT NULL DEFAULT 'edit'",
+            "undo_of_operation_id": "TEXT",
+        }
+        if self.is_postgres:
+            for name, definition in columns.items():
+                self._execute(
+                    connection,
+                    f"ALTER TABLE cell_history ADD COLUMN IF NOT EXISTS {name} {definition}",
+                )
+        else:
+            existing = {
+                row["name"]
+                for row in self._execute(connection, "PRAGMA table_info(cell_history)").fetchall()
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    self._execute(
+                        connection,
+                        f"ALTER TABLE cell_history ADD COLUMN {name} {definition}",
+                    )
+        self._execute(
+            connection,
+            "CREATE INDEX IF NOT EXISTS idx_cell_history_operation ON cell_history(operation_id)",
+        )
 
     def _seed(self, connection: Any) -> None:
         now = utc_now()
@@ -302,6 +347,9 @@ class Database:
         color: Any = UNSET,
         expected_version: Optional[int] = None,
         updated_by: str,
+        operation_id: Optional[str] = None,
+        operation_kind: str = "edit",
+        undo_of_operation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._assert_foup(connection, foup_id)
         lock_clause = " FOR UPDATE" if self.is_postgres else ""
@@ -323,6 +371,7 @@ class Database:
         next_color = current["color"] if color is UNSET else color
         next_version = current["version"] + 1
         now = utc_now()
+        change_operation_id = operation_id or uuid4().hex
 
         self._execute(
             connection,
@@ -353,8 +402,9 @@ class Database:
             """
             INSERT INTO cell_history(
                 foup_id, slot_no, column_key, old_value, new_value,
-                old_color, new_color, updated_by, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                old_color, new_color, updated_by, updated_at,
+                operation_id, operation_kind, undo_of_operation_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 foup_id,
@@ -366,6 +416,9 @@ class Database:
                 next_color,
                 updated_by,
                 now,
+                change_operation_id,
+                operation_kind,
+                undo_of_operation_id,
             ),
         )
         return {
@@ -377,6 +430,9 @@ class Database:
             "version": next_version,
             "updated_by": updated_by,
             "updated_at": now,
+            "operation_id": change_operation_id,
+            "operation_kind": operation_kind,
+            "undo_of_operation_id": undo_of_operation_id,
         }
 
     def update_cell(self, **kwargs: Any) -> Dict[str, Any]:
@@ -387,14 +443,176 @@ class Database:
         return result
 
     def batch_update(
-        self, updates: List[Dict[str, Any]], updated_by: str
+        self,
+        updates: List[Dict[str, Any]],
+        updated_by: str,
+        operation_id: Optional[str] = None,
+        operation_kind: str = "edit",
+        undo_of_operation_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
+        change_operation_id = operation_id or uuid4().hex
         with self.connect() as connection:
             self._begin_write(connection)
             for update in updates:
                 results.append(
-                    self._apply_update(connection, updated_by=updated_by, **update)
+                    self._apply_update(
+                        connection,
+                        updated_by=updated_by,
+                        operation_id=change_operation_id,
+                        operation_kind=operation_kind,
+                        undo_of_operation_id=undo_of_operation_id,
+                        **update,
+                    )
+                )
+            connection.commit()
+        return results
+
+    def cell_activity(
+        self, foup_id: str, slot_no: int, column_key: str, limit: int = 50
+    ) -> Dict[str, Any]:
+        with self.connect() as connection:
+            current_row = self._execute(
+                connection,
+                """
+                SELECT * FROM plan_cells
+                WHERE foup_id = ? AND slot_no = ? AND column_key = ?
+                """,
+                (foup_id, slot_no, column_key),
+            ).fetchone()
+            current = self._row_to_cell(current_row, foup_id, slot_no, column_key)
+            rows = self._execute(
+                connection,
+                """
+                SELECT * FROM cell_history
+                WHERE foup_id = ? AND slot_no = ? AND column_key = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (foup_id, slot_no, column_key, limit),
+            ).fetchall()
+        return {"current": current, "items": [dict(row) for row in rows]}
+
+    def restore_history(
+        self,
+        *,
+        history_id: int,
+        foup_id: str,
+        slot_no: int,
+        column_key: str,
+        expected_version: int,
+        updated_by: str,
+        operation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self.connect() as connection:
+            self._begin_write(connection)
+            history = self._execute(
+                connection,
+                """
+                SELECT * FROM cell_history
+                WHERE id = ? AND foup_id = ? AND slot_no = ? AND column_key = ?
+                """,
+                (history_id, foup_id, slot_no, column_key),
+            ).fetchone()
+            if history is None:
+                raise UnknownHistory(history_id)
+            item = dict(history)
+            result = self._apply_update(
+                connection,
+                foup_id=foup_id,
+                slot_no=slot_no,
+                column_key=column_key,
+                value=item["old_value"],
+                color=item["old_color"],
+                expected_version=expected_version,
+                updated_by=updated_by,
+                operation_id=operation_id or uuid4().hex,
+                operation_kind="restore",
+            )
+            connection.commit()
+        return result
+
+    def undo_operation(
+        self,
+        operation_id: str,
+        *,
+        updated_by: str,
+        undo_operation_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self.connect() as connection:
+            self._begin_write(connection)
+            rows = self._execute(
+                connection,
+                """
+                SELECT * FROM cell_history
+                WHERE operation_id = ?
+                ORDER BY id ASC
+                """,
+                (operation_id,),
+            ).fetchall()
+            if not rows:
+                raise UnknownOperation(operation_id)
+
+            changes: Dict[tuple, Dict[str, Any]] = {}
+            for raw_row in rows:
+                row = dict(raw_row)
+                key = (row["foup_id"], row["slot_no"], row["column_key"])
+                if key not in changes:
+                    changes[key] = {
+                        "first": row,
+                        "last": row,
+                    }
+                else:
+                    changes[key]["last"] = row
+
+            for key, change in changes.items():
+                latest = self._execute(
+                    connection,
+                    """
+                    SELECT id FROM cell_history
+                    WHERE foup_id = ? AND slot_no = ? AND column_key = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    key,
+                ).fetchone()
+                if latest is None or latest["id"] != change["last"]["id"]:
+                    current_row = self._execute(
+                        connection,
+                        """
+                        SELECT * FROM plan_cells
+                        WHERE foup_id = ? AND slot_no = ? AND column_key = ?
+                        """,
+                        key,
+                    ).fetchone()
+                    raise CellConflict(self._row_to_cell(current_row, *key))
+
+            undo_id = undo_operation_id or uuid4().hex
+            results: List[Dict[str, Any]] = []
+            for key, change in changes.items():
+                current_row = self._execute(
+                    connection,
+                    """
+                    SELECT * FROM plan_cells
+                    WHERE foup_id = ? AND slot_no = ? AND column_key = ?
+                    """,
+                    key,
+                ).fetchone()
+                current = self._row_to_cell(current_row, *key)
+                first = change["first"]
+                results.append(
+                    self._apply_update(
+                        connection,
+                        foup_id=key[0],
+                        slot_no=key[1],
+                        column_key=key[2],
+                        value=first["old_value"],
+                        color=first["old_color"],
+                        expected_version=current["version"],
+                        updated_by=updated_by,
+                        operation_id=undo_id,
+                        operation_kind="undo",
+                        undo_of_operation_id=operation_id,
+                    )
                 )
             connection.commit()
         return results

@@ -9,6 +9,8 @@ const stateStore = {
   toastTimer: null,
   reconnectTimer: null,
   pendingSaves: new WeakMap(),
+  undoStack: [],
+  undoing: false,
   viewMode: localStorage.getItem("foup-view-mode") || "sheet",
 };
 
@@ -19,6 +21,8 @@ const elements = {
   search: document.getElementById("search-input"),
   statusFilter: document.getElementById("status-filter"),
   refresh: document.getElementById("refresh-button"),
+  undo: document.getElementById("undo-button"),
+  cellHistory: document.getElementById("cell-history-button"),
   userName: document.getElementById("user-name"),
   palette: document.getElementById("color-palette"),
   selectionCount: document.getElementById("selection-count"),
@@ -26,6 +30,7 @@ const elements = {
   connectionPill: document.getElementById("connection-pill"),
   connectionLabel: document.getElementById("connection-label"),
   historyDrawer: document.getElementById("history-drawer"),
+  historyEyebrow: document.getElementById("history-eyebrow"),
   historyTitle: document.getElementById("history-title"),
   historySubtitle: document.getElementById("history-subtitle"),
   historyContent: document.getElementById("history-content"),
@@ -353,6 +358,20 @@ function updateSelectionLabel() {
   elements.selectionCount.textContent = count
     ? `${count}개 셀 선택됨`
     : "셀을 선택하면 색을 지정할 수 있습니다.";
+  elements.cellHistory.disabled = count !== 1;
+}
+
+function updateUndoButton() {
+  elements.undo.disabled = !stateStore.undoStack.length || stateStore.undoing;
+}
+
+function rememberOperation(operationId) {
+  if (!operationId) return;
+  if (stateStore.undoStack.at(-1) !== operationId) {
+    stateStore.undoStack.push(operationId);
+  }
+  if (stateStore.undoStack.length > 50) stateStore.undoStack.shift();
+  updateUndoButton();
 }
 
 function normalizeCellText(cell) {
@@ -402,6 +421,7 @@ async function saveCell(cell, { moveAfter = null } = {}) {
       }
       if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
       applyCellUpdate(body, { force: true });
+      rememberOperation(body.operation_id);
       return true;
     } catch (error) {
       cell.textContent = original;
@@ -515,11 +535,49 @@ async function saveBatch(updates, successMessage, { force = false } = {}) {
     }
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
     body.cells.forEach((cell) => applyCellUpdate(cell, { force }));
+    rememberOperation(body.operation_id);
     showToast(successMessage);
     return true;
   } catch (error) {
     showToast(`저장 실패: ${error.message}`, "error");
     return false;
+  }
+}
+
+async function undoLastOperation({ pendingSave = null } = {}) {
+  if (stateStore.undoing) return;
+  stateStore.undoing = true;
+  updateUndoButton();
+  try {
+    if (pendingSave) await pendingSave;
+    const operationId = stateStore.undoStack.at(-1);
+    if (!operationId) {
+      showToast("현재 화면에서 되돌릴 작업이 없습니다. 셀 변경 이력을 확인하세요.", "error");
+      return;
+    }
+    const response = await fetch(`/api/operations/${encodeURIComponent(operationId)}/undo`, {
+      method: "POST",
+      headers: apiHeaders(),
+    });
+    const body = await response.json();
+    stateStore.undoStack.pop();
+    if (response.status === 409) {
+      stateStore.undoStack.length = 0;
+      applyCellUpdate(body.current, { force: true });
+      showToast("이후 수정된 셀이 있어 자동 되돌리기를 중단했습니다. 변경 이력을 확인하세요.", "error");
+      return;
+    }
+    if (!response.ok) {
+      stateStore.undoStack.length = 0;
+      throw new Error(body.detail || `HTTP ${response.status}`);
+    }
+    body.cells.forEach((cell) => applyCellUpdate(cell, { force: true }));
+    showToast(`${body.updated}개 셀을 이전 상태로 되돌렸습니다.`);
+  } catch (error) {
+    showToast(`되돌리기 실패: ${error.message}`, "error");
+  } finally {
+    stateStore.undoing = false;
+    updateUndoButton();
   }
 }
 
@@ -667,10 +725,140 @@ async function pasteRange(event, startCell) {
   if (saved) selectRange(cellKey(startCell.dataset.foup, startCell.dataset.slot, startCell.dataset.column), lastCell);
 }
 
+function selectedCellForHistory() {
+  if (stateStore.selected.size !== 1) return null;
+  return getCellByKey([...stateStore.selected][0]);
+}
+
+function cellColumnLabel(columnKey) {
+  return {
+    planned_sub: "Sub",
+    assignee: "사용자",
+    details: "세부사항",
+  }[columnKey] || columnKey;
+}
+
+function historyValue(value, color) {
+  const wrap = document.createElement("div");
+  wrap.className = `cell-history-value ${value ? "" : "cell-history-empty"}`.trim();
+  wrap.textContent = value || "빈 셀";
+  if (color) {
+    wrap.style.borderLeft = `8px solid ${color}`;
+    wrap.title = `배경색 ${color}`;
+  }
+  return wrap;
+}
+
+function historyKindLabel(kind) {
+  return {
+    undo: "되돌리기",
+    restore: "이력 복원",
+  }[kind] || "수정";
+}
+
+function renderCellHistory(data, cell) {
+  elements.historyContent.replaceChildren();
+  if (!data.items.length) {
+    elements.historyContent.appendChild(
+      textNode("p", "history-loading", "아직 이 셀의 변경 이력이 없습니다.")
+    );
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "cell-history-list";
+  data.items.forEach((item) => {
+    const article = document.createElement("article");
+    article.className = "cell-history-item";
+
+    const meta = document.createElement("div");
+    meta.className = "cell-history-meta";
+    meta.append(
+      textNode("span", "cell-history-actor", `${item.updated_by} · ${historyKindLabel(item.operation_kind)}`),
+      textNode("time", "", formatDateTime(item.updated_at))
+    );
+
+    const diff = document.createElement("div");
+    diff.className = "cell-history-diff";
+    diff.append(
+      historyValue(item.old_value, item.old_color),
+      textNode("span", "cell-history-arrow", "→"),
+      historyValue(item.new_value, item.new_color)
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "cell-history-actions";
+    const restore = textNode("button", "restore-button", "변경 전으로 복원");
+    restore.type = "button";
+    restore.addEventListener("click", () => {
+      void restoreCellHistory(cell, item.id, data.current.version, restore);
+    });
+    actions.appendChild(restore);
+    article.append(meta, diff, actions);
+    list.appendChild(article);
+  });
+  elements.historyContent.appendChild(list);
+}
+
+async function openCellHistory() {
+  const cell = selectedCellForHistory();
+  if (!cell) {
+    showToast("변경 이력을 볼 셀 하나를 선택하세요.", "error");
+    return;
+  }
+  elements.historyDrawer.classList.add("open");
+  elements.historyDrawer.setAttribute("aria-hidden", "false");
+  elements.historyEyebrow.textContent = "CELL VERSION";
+  elements.historyTitle.textContent = "셀 변경 이력";
+  elements.historySubtitle.textContent = `${cell.dataset.foup} · Slot ${cell.dataset.slot} · ${cellColumnLabel(cell.dataset.column)}`;
+  elements.historyContent.innerHTML = '<p class="history-loading">변경 이력을 불러오는 중입니다.</p>';
+  try {
+    const response = await fetch(
+      `/api/cells/${encodeURIComponent(cell.dataset.foup)}/${cell.dataset.slot}/${cell.dataset.column}/history`,
+      { cache: "no-store" }
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    renderCellHistory(body, cell);
+  } catch (error) {
+    elements.historyContent.textContent = `변경 이력을 불러오지 못했습니다. ${error.message}`;
+  }
+}
+
+async function restoreCellHistory(cell, historyId, expectedVersion, button) {
+  button.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/cells/${encodeURIComponent(cell.dataset.foup)}/${cell.dataset.slot}/${cell.dataset.column}/history/${historyId}/restore`,
+      {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ expected_version: expectedVersion }),
+      }
+    );
+    const body = await response.json();
+    if (response.status === 409) {
+      applyCellUpdate(body.current, { force: true });
+      showToast("이력을 보는 동안 다른 사용자가 수정했습니다. 최신 이력을 다시 확인하세요.", "error");
+      await openCellHistory();
+      return;
+    }
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    applyCellUpdate(body.cell, { force: true });
+    rememberOperation(body.operation_id);
+    showToast("선택한 변경 전 상태로 복원했습니다.");
+    await openCellHistory();
+  } catch (error) {
+    showToast(`복원 실패: ${error.message}`, "error");
+    button.disabled = false;
+  }
+}
+
 async function openHistory(cell) {
   const { foup, slot, wafer } = cell.dataset;
   elements.historyDrawer.classList.add("open");
   elements.historyDrawer.setAttribute("aria-hidden", "false");
+  elements.historyEyebrow.textContent = "WAFER TRACE";
   elements.historyTitle.textContent = "Wafer History";
   elements.historySubtitle.textContent = `${wafer} · ${foup} / Slot ${slot}`;
   elements.historyContent.innerHTML = '<p class="history-loading">이력을 불러오는 중입니다.</p>';
@@ -813,6 +1001,8 @@ elements.palette.addEventListener("click", (event) => {
 elements.search.addEventListener("input", applyFilters);
 elements.statusFilter.addEventListener("change", applyFilters);
 elements.refresh.addEventListener("click", () => void loadState({ announce: true }));
+elements.undo.addEventListener("click", () => void undoLastOperation());
+elements.cellHistory.addEventListener("click", () => void openCellHistory());
 elements.viewButtons.forEach((button) => {
   button.addEventListener("click", () => setViewMode(button.dataset.view));
 });
@@ -823,10 +1013,27 @@ elements.userName.addEventListener("change", () => {
 
 document.querySelectorAll("[data-close-drawer]").forEach((button) => button.addEventListener("click", closeHistory));
 document.addEventListener("keydown", (event) => {
+  const undoShortcut =
+    (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLocaleLowerCase() === "z";
+  if (undoShortcut) {
+    const target = event.target;
+    if (target.matches?.("input, textarea, select")) return;
+    const activeCell = target.closest?.(".editable-cell");
+    const pendingSave = activeCell ? stateStore.pendingSaves.get(activeCell) : null;
+    if (
+      activeCell &&
+      !pendingSave &&
+      normalizeCellText(activeCell) !== (activeCell.dataset.original || "")
+    ) return;
+    event.preventDefault();
+    void undoLastOperation({ pendingSave });
+    return;
+  }
   if (event.key === "Escape" && elements.historyDrawer.classList.contains("open")) closeHistory();
 });
 
 elements.userName.value = localStorage.getItem("foup-user-name") || "익명 사용자";
 setViewMode(stateStore.viewMode);
+updateUndoButton();
 void loadState();
 connectWebSocket();
