@@ -20,7 +20,27 @@
 - PostgreSQL 운영 지원, SQLite 로컬 데모 지원
 - 사내 실시간 API 장애 시에도 계획 편집은 계속 가능한 분리 구조
 
-## 바로 실행
+## Windows 사내 PC 실행
+
+Python 3.9 이상 64비트 버전을 설치한 뒤 프로젝트 폴더에서 다음 파일을 순서대로 실행합니다.
+
+```bat
+setup_windows.cmd
+start_windows.cmd
+```
+
+`setup_windows.cmd`는 Windows용 가상환경과 패키지를 준비하며 최초 한 번만 실행하면 됩니다. `start_windows.cmd`는 기본적으로 `0.0.0.0:8000`에서 FastAPI를 실행합니다. 브라우저에서 `http://127.0.0.1:8000`으로 접속하고, 같은 사내망의 다른 PC에서는 방화벽과 사내 정책이 허용된 경우 `http://서버PC주소:8000`으로 접속합니다.
+
+운영 설정이 필요하면 `.env.example`을 `.env`로 복사해 값을 수정합니다. Windows 탐색기에서 확장자가 숨겨진 경우 파일명이 `.env.txt`가 되지 않도록 확인하세요. 사내 패키지 저장소나 프록시를 사용하는 환경에서는 `PIP_INDEX_URL`, `HTTPS_PROXY`를 회사 기준에 맞게 설정한 뒤 `setup_windows.cmd`를 실행합니다.
+
+포트를 변경하려면 명령 프롬프트에서 아래처럼 실행합니다.
+
+```bat
+set FOUP_PORT=8765
+start_windows.cmd
+```
+
+## macOS/Linux 개발 실행
 
 Python 3.9 이상에서 실행합니다.
 
@@ -33,11 +53,13 @@ uvicorn app.main:app --reload
 
 브라우저에서 `http://127.0.0.1:8000`으로 접속합니다. API 문서는 `http://127.0.0.1:8000/api/docs`입니다. 환경 변수가 없으면 `data/foup_manager.db`와 데모 실시간 데이터를 사용합니다.
 
-> `app/static/index.html`을 Finder에서 직접 열면 API가 연결되지 않습니다. 반드시 위처럼 FastAPI를 실행하고 `http://127.0.0.1:8000`으로 접속하세요. 직접 열었을 때도 이 실행 방법을 안내하는 화면이 표시됩니다.
+> `app/static/index.html`을 Windows 탐색기나 Finder에서 직접 열면 API가 연결되지 않습니다. 반드시 FastAPI를 실행하고 `http://127.0.0.1:8000`으로 접속하세요.
 
 ## PostgreSQL 연결
 
 운영 서버에 아래 환경 변수를 지정하면 SQLite 대신 PostgreSQL을 사용합니다. 앱 시작 시 `foups`, `plan_cells`, `cell_history` 테이블과 인덱스를 생성하고, 빈 DB에는 현재 Google Sheet의 네 FOUP를 초기 데이터로 넣습니다.
+
+Windows에서는 `.env.example`을 `.env`로 복사한 뒤 `DATABASE_URL`을 수정하면 `start_windows.cmd`가 자동으로 읽습니다.
 
 ```bash
 export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@DB_HOST:5432/DB_NAME'
@@ -110,6 +132,10 @@ export FOUP_LIVE_API_TIMEOUT='5'
 ```
 
 사내 응답 형식이 다르면 `HttpLiveDataAdapter` 내부의 두 메서드에서 회사 스키마를 위 계약으로 변환하면 됩니다. 토큰은 브라우저로 전달되지 않습니다.
+
+## HCP 배포 준비
+
+사내 HCP에 맞춘 이미지, Windows 서비스, Kubernetes 배포 파일, 인증 연동, Secret 주입과 다중 인스턴스 WebSocket 구성이 필요하면 [HCP 배포 환경 확인 항목](docs/HCP_DEPLOYMENT_CHECKLIST.md)을 기준으로 환경 정보를 정리합니다. 비밀번호나 실제 토큰은 전달하지 않고 주입 방식과 비식별 샘플만 공유합니다.
 
 ## 검증
 

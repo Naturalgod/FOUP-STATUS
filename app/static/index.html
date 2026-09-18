@@ -24,8 +24,9 @@
       <div class="file-warning-card">
         <h1>이 파일은 FastAPI 서버로 열어야 합니다.</h1>
         <p>HTML 파일을 직접 열면 FOUP 데이터와 편집 API가 연결되지 않아 시트가 표시되지 않습니다.</p>
-        <p>프로젝트 폴더의 터미널에서 아래 명령을 실행한 뒤 <strong>http://127.0.0.1:8000</strong>으로 접속하세요.</p>
-        <code>uvicorn app.main:app --reload</code>
+        <p>프로젝트 폴더에서 서버를 실행한 뒤 <strong>http://127.0.0.1:8000</strong>으로 접속하세요.</p>
+        <code>Windows: start_windows.cmd</code>
+        <code>macOS/Linux: uvicorn app.main:app --reload</code>
       </div>
     </section>
 
@@ -124,13 +125,13 @@
           <div class="toolbar-help">
             <kbd>Shift</kbd> 범위 선택
             <span>·</span>
-            <kbd>⌘/Ctrl</kbd> 다중 선택
+            <kbd>Ctrl/⌘</kbd> 다중 선택
             <span>·</span>
-            <kbd>⌘/Ctrl+C·V</kbd> 복사·붙여넣기
+            <kbd>Ctrl/⌘+C·V</kbd> 복사·붙여넣기
             <span>·</span>
             <kbd>Delete</kbd> 내용 지우기
             <span>·</span>
-            <kbd>⌘/Ctrl+Z</kbd> 되돌리기
+            <kbd>Ctrl/⌘+Z</kbd> 되돌리기
           </div>
         </div>
       </section>
@@ -173,6 +174,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script src="/static/app.js?v=20260919-5" defer></script>
+    <script src="/static/app.js?v=20260919-6" defer></script>
   </body>
 </html>
