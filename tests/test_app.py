@@ -47,7 +47,43 @@ class FoupAppTestCase(unittest.TestCase):
         self.assertIn("실시간 통합", response.text)
         self.assertIn("연두색 셀", response.text)
         self.assertIn("복사·붙여넣기", response.text)
+        self.assertIn("내용 지우기", response.text)
         self.assertIn("이 파일은 FastAPI 서버로 열어야 합니다", response.text)
+
+    def test_batch_clear_values_preserves_cell_color(self) -> None:
+        color = self.client.patch(
+            "/api/cells/ENG10000/1/planned_sub",
+            json={"color": "#FFF2CC", "expected_version": 0},
+        )
+        self.assertEqual(color.status_code, 200)
+
+        clear = self.client.post(
+            "/api/cells/batch",
+            headers={"X-User": quote("삭제 테스트")},
+            json={
+                "updates": [
+                    {
+                        "foup_id": "ENG10000",
+                        "slot_no": 1,
+                        "column_key": "planned_sub",
+                        "value": "",
+                        "expected_version": 1,
+                    },
+                    {
+                        "foup_id": "ENG10000",
+                        "slot_no": 1,
+                        "column_key": "assignee",
+                        "value": "",
+                        "expected_version": 0,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(clear.status_code, 200)
+        cells = clear.json()["cells"]
+        self.assertEqual([cell["value"] for cell in cells], ["", ""])
+        self.assertEqual(cells[0]["color"], "#FFF2CC")
+        self.assertEqual(cells[0]["updated_by"], "삭제 테스트")
 
     def test_direct_cell_edit_and_optimistic_conflict(self) -> None:
         response = self.client.patch(

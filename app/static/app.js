@@ -499,7 +499,7 @@ async function applyColor(color) {
   await saveBatch(updates, color ? "예약 색상을 적용했습니다." : "셀 색상을 지웠습니다.");
 }
 
-async function saveBatch(updates, successMessage) {
+async function saveBatch(updates, successMessage, { force = false } = {}) {
   if (!updates.length) return false;
   try {
     const response = await fetch("/api/cells/batch", {
@@ -514,13 +514,50 @@ async function saveBatch(updates, successMessage) {
       return false;
     }
     if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
-    body.cells.forEach(applyCellUpdate);
+    body.cells.forEach((cell) => applyCellUpdate(cell, { force }));
     showToast(successMessage);
     return true;
   } catch (error) {
     showToast(`저장 실패: ${error.message}`, "error");
     return false;
   }
+}
+
+async function clearSelectedCells() {
+  const selectedCells = [...stateStore.selected]
+    .map(getCellByKey)
+    .filter(Boolean);
+  if (!selectedCells.length) {
+    showToast("먼저 지울 셀을 선택하세요.", "error");
+    return;
+  }
+
+  const pendingSaves = selectedCells
+    .map((cell) => stateStore.pendingSaves.get(cell))
+    .filter(Boolean);
+  if (pendingSaves.length) await Promise.all(pendingSaves);
+
+  const updates = selectedCells
+    .filter((cell) => normalizeCellText(cell) !== "" || (cell.dataset.original || "") !== "")
+    .map((cell) => ({
+      foup_id: cell.dataset.foup,
+      slot_no: Number(cell.dataset.slot),
+      column_key: cell.dataset.column,
+      value: "",
+      expected_version: Number(cell.dataset.version),
+    }));
+
+  if (!updates.length) {
+    showToast("선택한 셀은 이미 비어 있습니다.");
+    return;
+  }
+  await saveBatch(updates, `${updates.length}개 셀의 내용을 지웠습니다.`, { force: true });
+}
+
+function hasTextSelectionInside(cell) {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.toString()) return false;
+  return cell.contains(selection.anchorNode) && cell.contains(selection.focusNode);
 }
 
 function escapeClipboardHtml(value) {
@@ -737,7 +774,13 @@ elements.grid.addEventListener("keydown", (event) => {
   }
   const cell = event.target.closest(".editable-cell");
   if (!cell) return;
-  if (event.key === "Escape") {
+  const isDeleteKey = event.key === "Delete" || event.key === "Backspace";
+  const isDirtySingleCell =
+    stateStore.selected.size === 1 && normalizeCellText(cell) !== (cell.dataset.original || "");
+  if (isDeleteKey && !hasTextSelectionInside(cell) && !(event.key === "Backspace" && isDirtySingleCell)) {
+    event.preventDefault();
+    void clearSelectedCells();
+  } else if (event.key === "Escape") {
     event.preventDefault();
     cell.textContent = cell.dataset.original || "";
     cell.blur();
