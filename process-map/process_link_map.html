@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연계공정 Map</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --ink: #1c2230;
+    --ink-2: #4a5263;
+    --ink-3: #7b8394;
+    --line: #e1e5eb;
+    --line-2: #c8ced8;
+    --band-a: #eef1f5;
+    --band-b: #fafbfc;
+    --node-bg: #ffffff;
+    --node-stroke: #8e96a4;
+    --accent: #1c2230;
+    --warn-bg: #fff5e6;
+    --warn-line: #efb35a;
+    --warn-ink: #6e4300;
+    --err-ink: #9b1c1c;
+    --font: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.45 var(--font);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  button, select { font: inherit; color: inherit; }
+
+  /* ---------- 상단 바 ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .topbar h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+  .topbar h1 small { font-weight: 500; color: var(--ink-3); margin-left: 6px; font-size: 12px; }
+  .tabs { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; }
+  .tab {
+    border: 0; background: transparent; padding: 5px 14px; cursor: pointer;
+    color: var(--ink-2); font-weight: 600;
+  }
+  .tab + .tab { border-left: 1px solid var(--line-2); }
+  .tab.active { background: var(--accent); color: #fff; }
+  .tab:disabled { cursor: not-allowed; color: var(--ink-3); }
+  .spacer { flex: 1; }
+  .ctrl-group { display: inline-flex; align-items: center; gap: 4px; }
+  .ctrl-group label { color: var(--ink-3); font-size: 12px; margin-right: 2px; }
+  .btn {
+    border: 1px solid var(--line-2); background: var(--surface); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; min-width: 30px;
+  }
+  .btn:hover { background: var(--band-a); }
+  .zoom-val { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  select { border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--surface); }
+
+  /* ---------- 검증 경고 바 ---------- */
+  .warnbar {
+    background: var(--warn-bg); border-bottom: 1px solid var(--warn-line);
+    color: var(--warn-ink); padding: 6px 14px; font-size: 12.5px;
+  }
+  .warnbar[hidden] { display: none; }
+  .warnbar summary { cursor: pointer; font-weight: 600; }
+  .warnbar ul { margin: 6px 0 2px; padding-left: 20px; max-height: 120px; overflow: auto; }
+  .warnbar li.error { color: var(--err-ink); }
+  .warnbar .close { float: right; border: 0; background: transparent; cursor: pointer; color: var(--warn-ink); font-size: 14px; }
+
+  /* ---------- 범례 ---------- */
+  .legend {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 6px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-2);
+  }
+  .legend .grp { display: inline-flex; align-items: center; gap: 12px; }
+  .legend .grp-title { color: var(--ink-3); font-weight: 600; margin-right: 2px; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .legend .item b { color: var(--ink); font-weight: 600; }
+  .legend .cnt { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .lk { display: inline-block; width: 22px; height: 0; border-top: 3px solid currentColor; vertical-align: middle; }
+  .lk.dash { border-top-style: dashed; }
+  .sep { width: 1px; align-self: stretch; background: var(--line); }
+
+  /* ---------- 메인 Flow 영역 ---------- */
+  .main {
+    flex: 1; position: relative; min-height: 200px; background: var(--surface);
+    overflow: hidden; cursor: grab; user-select: none; touch-action: none;
+  }
+  .main.dragging { cursor: grabbing; }
+  .main:focus { outline: none; }
+  /* 콘텐츠 SVG는 GPU 합성 레이어: 팬은 CSS transform만 바꿔 재래스터 없이 이동 */
+  #flowSvg {
+    position: absolute; left: 0; top: 0; display: block; overflow: visible;
+    transform-origin: 0 0; will-change: transform; font-family: var(--font);
+  }
+  /* 고정 헤더·좌측 lane 라벨 오버레이 */
+  #overlaySvg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: block; pointer-events: none; font-family: var(--font);
+  }
+  #overlaySvg #hdr, #overlaySvg #gutter, #overlaySvg #corner { pointer-events: auto; }
+
+  .band-a { fill: var(--band-a); }
+  .band-b { fill: var(--band-b); }
+  .band-line { stroke: var(--line-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .lane-line { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 5; vector-effect: non-scaling-stroke; }
+
+  .edge { fill: none; stroke-linecap: round; opacity: 0.85; vector-effect: non-scaling-stroke; }
+  .edge.bwd { stroke-dasharray: 7 5; stroke-linecap: butt; }
+  #layerEdges, #layerHover { pointer-events: none; }
+  #layerEdgeHits path {
+    fill: none; stroke: transparent; stroke-width: 12;
+    pointer-events: stroke; vector-effect: non-scaling-stroke; cursor: pointer;
+  }
+  .hover-halo { fill: none; stroke: #ffffff; opacity: 0.95; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .hover-edge { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .hover-edge.bwd { stroke-dasharray: 7 5; stroke-linecap: butt; }
+
+  .node { cursor: pointer; }
+  .node rect { fill: var(--node-bg); stroke: var(--node-stroke); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .node text { font-size: 11.5px; font-weight: 500; fill: var(--ink); pointer-events: none; }
+  .node.is-hover rect, .node.hl-end rect { stroke: var(--ink); stroke-width: 2; }
+  .lod-far .node text { display: none; }
+
+  /* 고정 헤더(모듈 라벨 + order 눈금)와 좌측 swimlane 라벨 */
+  .hdr-bg, .gutter-bg, .corner { fill: var(--surface); }
+  .hdr-border { stroke: var(--line-2); stroke-width: 1; }
+  .hdr-band-a { fill: var(--band-a); }
+  .hdr-band-b { fill: var(--band-b); }
+  .hdr-band-line { stroke: var(--line-2); stroke-width: 1; }
+  .hdr-mod { font-size: 12px; font-weight: 700; fill: var(--ink); }
+  .hdr-tick { font-size: 10px; fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .gut-lane-a { fill: #f2f4f7; }
+  .gut-lane-b { fill: #fafbfc; }
+  .gut-unit { font-size: 11.5px; font-weight: 700; fill: var(--ink); letter-spacing: 0.02em; }
+  .gut-sub { font-size: 10.5px; fill: var(--ink-3); }
+  .corner-text { font-size: 10px; fill: var(--ink-3); }
+
+  /* ---------- 미니맵(가로 스크롤 바) ---------- */
+  .minimap-wrap {
+    height: 74px; border-top: 1px solid var(--line); background: var(--bg);
+    padding: 6px 10px; display: flex; gap: 10px; align-items: stretch;
+  }
+  .minimap-label { width: 86px; font-size: 11px; color: var(--ink-3); display: flex; flex-direction: column; justify-content: center; }
+  .minimap-label b { color: var(--ink-2); font-size: 12px; }
+  .mini-box {
+    flex: 1; position: relative; overflow: hidden; background: var(--surface);
+    border: 1px solid var(--line-2); border-radius: 5px; cursor: pointer; touch-action: none;
+  }
+  #miniSvg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .mini-node { fill: #6b7383; }
+  .mini-edge { fill: none; stroke-width: 0.7; opacity: 0.55; vector-effect: non-scaling-stroke; }
+  /* 보이는 영역 표시는 SVG 밖의 합성 레이어(div)로 → 미니맵 SVG 재페인트 없이 이동 */
+  .mini-win {
+    position: absolute; left: 0; top: 0; width: 10px; height: 10px;
+    background: rgba(28, 34, 48, 0.08); border: 1.5px solid var(--ink); border-radius: 2px;
+    will-change: transform; pointer-events: none; transform-origin: 0 0;
+  }
+
+  /* ---------- 상태 바 ---------- */
+  .statusbar {
+    display: flex; gap: 14px; padding: 4px 14px; font-size: 11.5px; color: var(--ink-3);
+    background: var(--surface); border-top: 1px solid var(--line);
+  }
+  .statusbar .hint { margin-left: auto; }
+  kbd {
+    font: 10.5px var(--font); border: 1px solid var(--line-2); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 4px; background: var(--bg); color: var(--ink-2);
+  }
+
+  /* ---------- 툴팁 ---------- */
+  .tooltip {
+    position: fixed; z-index: 50; pointer-events: none;
+    max-width: 340px; min-width: 180px;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line-2); border-radius: 8px;
+    box-shadow: 0 6px 22px rgba(20, 26, 40, 0.16);
+    padding: 9px 11px; font-size: 12px; line-height: 1.5;
+  }
+  .tooltip[hidden] { display: none; }
+  .tt-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; display: flex; align-items: center; gap: 7px; }
+  .tt-grid { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 1px; }
+  .tt-grid .k { color: var(--ink-3); }
+  .tt-grid .v { color: var(--ink); font-weight: 600; }
+  .tt-path { font-weight: 600; margin: 3px 0; }
+  .tt-path .arrow { color: var(--ink-3); margin: 0 4px; font-weight: 400; }
+  .tt-mech { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink-2); }
+  .tt-dots { letter-spacing: 1px; }
+  .tt-dir { color: var(--ink-3); font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<!-- =================== 상단 바 =================== -->
+<header class="topbar">
+  <h1>연계공정 Map<small>Process Interaction Map</small></h1>
+  <nav class="tabs" role="tablist" aria-label="보기 전환">
+    <button class="tab active" data-view="flow" role="tab" aria-selected="true">Flow</button>
+    <button class="tab" data-view="dsm" role="tab" aria-selected="false" disabled title="3단계에서 구현 예정">DSM</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="ctrl-group">
+    <label for="dataSel">데이터</label>
+    <select id="dataSel" title="내장 샘플 또는 성능 테스트용 대용량 가상 데이터">
+      <option value="embedded">내장 샘플</option>
+      <option value="stress">성능 테스트 (300 노드 · 1500 엣지)</option>
+    </select>
+  </div>
+  <div class="ctrl-group" aria-label="줌">
+    <button class="btn" id="btnZoomOut" title="축소 (-)">−</button>
+    <span class="zoom-val" id="zoomVal">100%</span>
+    <button class="btn" id="btnZoomIn" title="확대 (+)">+</button>
+    <button class="btn" id="btnFitH" title="높이 맞춤 (H)">높이 맞춤</button>
+    <button class="btn" id="btnFitAll" title="전체 보기 (F)">전체 보기</button>
+  </div>
+</header>
+
+<!-- =================== 데이터 검증 경고 =================== -->
+<div class="warnbar" id="warnBar" hidden>
+  <button class="close" id="warnClose" title="닫기">✕</button>
+  <details>
+    <summary id="warnSummary"></summary>
+    <ul id="warnList"></ul>
+  </details>
+</div>
+
+<!-- =================== 범례 =================== -->
+<div class="legend" id="legend"></div>
+
+<!-- =================== Flow 뷰 =================== -->
+<main class="main" id="flowMain" tabindex="0" aria-label="연계공정 Flow 뷰">
+  <svg id="flowSvg">
+    <defs id="flowDefs"></defs>
+    <g id="viewport">
+      <g id="layerBands"></g>
+      <g id="layerLanes"></g>
+      <g id="layerEdges"></g>
+      <g id="layerEdgeHits"></g>
+      <g id="layerHover"></g>
+      <g id="layerNodes"></g>
+    </g>
+  </svg>
+  <svg id="overlaySvg">
+    <!-- 고정 헤더: 모듈 라벨 + order 눈금 (가로 팬/줌만 따라감) -->
+    <g id="hdr">
+      <rect class="hdr-bg" id="hdrBg" x="0" y="0" width="100%"></rect>
+      <g id="hdrInner"></g>
+      <line class="hdr-border" id="hdrBorder" x1="0" x2="100%"></line>
+    </g>
+    <!-- 고정 좌측: unit swimlane 라벨 (세로 팬/줌만 따라감) -->
+    <g id="gutter">
+      <rect class="gutter-bg" id="gutterBg" x="0" y="0" height="100%"></rect>
+      <g id="gutterInner"></g>
+      <line class="hdr-border" id="gutterBorder" y1="0" y2="100%"></line>
+    </g>
+    <rect class="corner" id="corner" x="0" y="0"></rect>
+    <text class="corner-text" id="cornerText1"></text>
+    <text class="corner-text" id="cornerText2"></text>
+  </svg>
+</main>
+
+<!-- =================== 미니맵 / 가로 스크롤 =================== -->
+<div class="minimap-wrap">
+  <div class="minimap-label"><b>Overview</b>드래그하여 이동</div>
+  <div class="mini-box" id="miniBox" aria-label="전체 개요 및 가로 스크롤">
+    <svg id="miniSvg"><g id="miniContent"></g></svg>
+    <div class="mini-win" id="miniWin"></div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="statCounts"></span>
+  <span class="hint">
+    <kbd>휠</kbd> 줌 · <kbd>Shift</kbd>+<kbd>휠</kbd> 가로 스크롤 · <kbd>드래그</kbd> 이동 ·
+    <kbd>F</kbd> 전체 · <kbd>H</kbd> 높이 맞춤 · <kbd>←</kbd><kbd>→</kbd> 이동
+  </span>
+</div>
+
+<div class="tooltip" id="tooltip" hidden role="tooltip"></div>
+
+<!-- =================== 내장 데이터 (렌더링 로직과 분리) =================== -->
+<script type="application/json" id="data">
+{
+  "nodes": [
+    { "id": "N01", "name": "STI Photo",          "module": "STI",     "unit": "PHOTO",   "order": 1 },
+    { "id": "N02", "name": "STI Etch",           "module": "STI",     "unit": "ETCH",    "order": 2 },
+    { "id": "N03", "name": "STI Gap-fill (HDP)", "module": "STI",     "unit": "DEPO",    "order": 3 },
+    { "id": "N04", "name": "STI CMP",            "module": "STI",     "unit": "CMP",     "order": 4 },
+    { "id": "N05", "name": "Well Photo",         "module": "Well",    "unit": "PHOTO",   "order": 5 },
+    { "id": "N06", "name": "Well Implant",       "module": "Well",    "unit": "IMP",     "order": 6 },
+    { "id": "N07", "name": "Pre-Gate Clean",     "module": "Gate",    "unit": "CLEAN",   "order": 7 },
+    { "id": "N08", "name": "Gate Oxidation",     "module": "Gate",    "unit": "THERMAL", "order": 8 },
+    { "id": "N09", "name": "Poly-Si Depo",       "module": "Gate",    "unit": "DEPO",    "order": 9 },
+    { "id": "N10", "name": "Gate Photo",         "module": "Gate",    "unit": "PHOTO",   "order": 10 },
+    { "id": "N11", "name": "Gate Etch",          "module": "Gate",    "unit": "ETCH",    "order": 11 },
+    { "id": "N12", "name": "Gate CD Measure",    "module": "Gate",    "unit": "METRO",   "order": 12 },
+    { "id": "N13", "name": "LDD Implant",        "module": "Spacer",  "unit": "IMP",     "order": 13 },
+    { "id": "N14", "name": "Spacer SiN Depo",    "module": "Spacer",  "unit": "DEPO",    "order": 14 },
+    { "id": "N15", "name": "Spacer Etch",        "module": "Spacer",  "unit": "ETCH",    "order": 15 },
+    { "id": "N16", "name": "S/D Implant",        "module": "S/D",     "unit": "IMP",     "order": 16 },
+    { "id": "N17", "name": "S/D Anneal",         "module": "S/D",     "unit": "THERMAL", "order": 17 },
+    { "id": "N18", "name": "Pre-Silicide Clean", "module": "S/D",     "unit": "CLEAN",   "order": 18 },
+    { "id": "N19", "name": "Silicide",           "module": "S/D",     "unit": "DEPO",    "order": 19 },
+    { "id": "N20", "name": "ILD Depo",           "module": "Contact", "unit": "DEPO",    "order": 20 },
+    { "id": "N21", "name": "ILD CMP",            "module": "Contact", "unit": "CMP",     "order": 21 },
+    { "id": "N22", "name": "Contact Photo",      "module": "Contact", "unit": "PHOTO",   "order": 22 },
+    { "id": "N23", "name": "Contact Etch",       "module": "Contact", "unit": "ETCH",    "order": 23 },
+    { "id": "N24", "name": "W Plug Depo",        "module": "Contact", "unit": "DEPO",    "order": 24 },
+    { "id": "N25", "name": "W CMP",              "module": "Contact", "unit": "CMP",     "order": 25 },
+    { "id": "N26", "name": "M1 Photo",           "module": "M1",      "unit": "PHOTO",   "order": 26 },
+    { "id": "N27", "name": "M1 Trench Etch",     "module": "M1",      "unit": "ETCH",    "order": 27 },
+    { "id": "N28", "name": "Cu CMP",             "module": "M1",      "unit": "CMP",     "order": 28 }
+  ],
+  "edges": [
+    { "source": "N04", "target": "N10", "type": "TOPO",    "severity": 3, "mechanism": "STI 단차가 gate photo DOF·CD 균일도에 영향" },
+    { "source": "N17", "target": "N06", "type": "THERMAL", "severity": 3, "mechanism": "후속 열처리로 well 도펀트 재분포" },
+    { "source": "N15", "target": "N19", "type": "CONTAM",  "severity": 2, "mechanism": "spacer etch 잔류물이 silicide 형성 저해" },
+
+    { "source": "N01", "target": "N02", "type": "DIM",     "severity": 2, "mechanism": "STI PR CD·profile이 active 폭과 trench 형상으로 전사" },
+    { "source": "N02", "target": "N03", "type": "TOPO",    "severity": 2, "mechanism": "trench 깊이·측벽 각도가 HDP gap-fill void/seam 발생 여부 결정" },
+    { "source": "N03", "target": "N04", "type": "FILM",    "severity": 2, "mechanism": "HDP 막 밀도·두께 산포가 CMP 연마 속도와 dishing·잔막 균일도 결정" },
+    { "source": "N07", "target": "N03", "type": "TOPO",    "severity": 3, "mechanism": "HF 기반 pre-gate clean이 STI oxide를 recess시켜 divot·step height 변화" },
+    { "source": "N01", "target": "N10", "type": "DIM",     "severity": 2, "mechanism": "STI(active) layer 정렬 기준 대비 gate overlay 마진" },
+    { "source": "N05", "target": "N06", "type": "DIM",     "severity": 2, "mechanism": "implant mask PR 경계 위치·두께가 well 경계와 shadowing 결정" },
+    { "source": "N08", "target": "N06", "type": "THERMAL", "severity": 2, "mechanism": "gate 산화 열공정으로 well 도펀트 확산·표면 농도 변화" },
+    { "source": "N07", "target": "N08", "type": "CONTAM",  "severity": 3, "mechanism": "잔류 금속·유기물이 gate oxide 결함 밀도와 Dit 증가 유발" },
+    { "source": "N08", "target": "N11", "type": "FILM",    "severity": 2, "mechanism": "gate oxide 두께가 poly etch 선택비·punch-through 마진 결정" },
+    { "source": "N09", "target": "N10", "type": "FILM",    "severity": 1, "mechanism": "poly 표면 거칠기·반사율이 photo CD 편차에 영향" },
+    { "source": "N10", "target": "N11", "type": "DIM",     "severity": 3, "mechanism": "PR CD·LWR가 gate CD로 직접 전사" },
+    { "source": "N11", "target": "N12", "type": "DIM",     "severity": 2, "mechanism": "etch bias가 최종 gate CD 및 feed-forward 보정 기준 결정" },
+    { "source": "N11", "target": "N08", "type": "PLASMA",  "severity": 3, "mechanism": "gate over-etch 시 plasma charging으로 gate oxide 손상 (antenna effect)" },
+    { "source": "N11", "target": "N13", "type": "DIM",     "severity": 2, "mechanism": "gate 하부 footing·CD가 LDD-gate overlap 길이 결정" },
+    { "source": "N14", "target": "N13", "type": "THERMAL", "severity": 2, "mechanism": "SiN LPCVD 열 budget으로 LDD 도펀트 확산" },
+    { "source": "N14", "target": "N15", "type": "FILM",    "severity": 2, "mechanism": "SiN 두께·conformality가 최종 spacer 폭 결정" },
+    { "source": "N15", "target": "N13", "type": "PLASMA",  "severity": 2, "mechanism": "spacer over-etch로 LDD 영역 Si recess·격자 손상 → 도펀트 손실" },
+    { "source": "N15", "target": "N16", "type": "DIM",     "severity": 3, "mechanism": "spacer 폭이 S/D-gate offset 및 유효 채널 길이(Leff) 결정" },
+    { "source": "N16", "target": "N17", "type": "FILM",    "severity": 2, "mechanism": "implant 비정질화 깊이가 재결정·EOR 결함 분포 결정" },
+    { "source": "N17", "target": "N13", "type": "THERMAL", "severity": 3, "mechanism": "spike anneal로 LDD 확산 및 overlap 증가 → short channel 특성 변화" },
+    { "source": "N18", "target": "N19", "type": "CONTAM",  "severity": 3, "mechanism": "native oxide 잔류 시 silicide 미형성·접촉 저항 증가" },
+    { "source": "N19", "target": "N16", "type": "FILM",    "severity": 2, "mechanism": "silicide가 Si를 소모하여 접합 깊이 대비 leakage 증가" },
+    { "source": "N20", "target": "N19", "type": "THERMAL", "severity": 3, "mechanism": "ILD 증착 열 budget으로 NiSi 응집·고저항 상 전이" },
+    { "source": "N09", "target": "N20", "type": "TOPO",    "severity": 2, "mechanism": "gate stack 높이가 ILD gap-fill aspect ratio와 void 결정" },
+    { "source": "N20", "target": "N21", "type": "FILM",    "severity": 2, "mechanism": "ILD 막두께 균일도가 CMP 후 잔막 산포 결정" },
+    { "source": "N21", "target": "N22", "type": "TOPO",    "severity": 3, "mechanism": "ILD 평탄도가 contact photo DOF 마진 결정" },
+    { "source": "N12", "target": "N22", "type": "DIM",     "severity": 2, "mechanism": "gate 실측 CD·overlay 기준으로 contact 정렬 보정" },
+    { "source": "N22", "target": "N23", "type": "DIM",     "severity": 3, "mechanism": "contact CD·overlay가 gate-contact short 마진 결정" },
+    { "source": "N23", "target": "N19", "type": "PLASMA",  "severity": 3, "mechanism": "contact over-etch로 silicide 손실·contact 저항 증가" },
+    { "source": "N23", "target": "N24", "type": "CONTAM",  "severity": 2, "mechanism": "etch polymer 잔류물이 barrier 접착 불량·W void 유발" },
+    { "source": "N24", "target": "N25", "type": "FILM",    "severity": 2, "mechanism": "W 막 grain·두께가 CMP 속도와 plug recess 결정" },
+    { "source": "N25", "target": "N21", "type": "TOPO",    "severity": 2, "mechanism": "W CMP 과연마로 ILD erosion 발생 → 추가 단차" },
+    { "source": "N25", "target": "N26", "type": "TOPO",    "severity": 2, "mechanism": "W recess·erosion 단차가 M1 photo 초점 마진에 영향" },
+    { "source": "N26", "target": "N27", "type": "DIM",     "severity": 3, "mechanism": "M1 CD·contact 대비 overlay가 metal-contact short/open 결정" },
+    { "source": "N27", "target": "N24", "type": "PLASMA",  "severity": 2, "mechanism": "M1 trench over-etch 시 W plug 상단 손상·산화" },
+    { "source": "N27", "target": "N28", "type": "TOPO",    "severity": 2, "mechanism": "trench 깊이 편차가 Cu CMP dishing·배선 저항 산포 결정" }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================================
+   * 1. 상수 / 설정
+   * ======================================================================== */
+
+  // swimlane 순서 (위 → 아래)
+  const UNIT_ORDER = ['PHOTO', 'ETCH', 'DEPO', 'CMP', 'IMP', 'THERMAL', 'CLEAN', 'METRO'];
+  const UNIT_LABEL = {
+    PHOTO: '노광', ETCH: '식각', DEPO: '증착', CMP: '평탄화',
+    IMP: '이온주입', THERMAL: '열처리', CLEAN: '세정', METRO: '계측'
+  };
+
+  // 영향 유형별 색 (Okabe-Ito 색약 대응 팔레트). ETC는 알 수 없는 type 대비용
+  const TYPE_META = {
+    TOPO:    { color: '#0072B2', label: '단차·평탄도' },
+    THERMAL: { color: '#D55E00', label: '열 budget' },
+    DIM:     { color: '#009E73', label: 'CD·Overlay' },
+    PLASMA:  { color: '#56B4E9', label: '데미지·charging' },
+    FILM:    { color: '#E69F00', label: '막질·stress·계면' },
+    CONTAM:  { color: '#CC79A7', label: '잔류물·파티클' },
+    ETC:     { color: '#000000', label: '기타(미정의)' }
+  };
+  const TYPE_KEYS = ['TOPO', 'THERMAL', 'DIM', 'PLASMA', 'FILM', 'CONTAM'];
+
+  const SEV_WIDTH = { 1: 1, 2: 2.5, 3: 4 };
+  const SEV_LABEL = { 1: '낮음', 2: '중간', 3: '높음' };
+  const MARKER_SIZE = { 1: 8, 2: 10, 3: 12 };
+
+  // 레이아웃 치수 (content 좌표계, px)
+  const L = {
+    COL_W: 120,      // order 1칸 폭
+    NODE_W: 100,
+    NODE_H: 28,
+    LANE_PAD: 18,    // lane 상하 여백
+    SLOT_GAP: 8,     // 같은 lane·같은 order에 노드가 여럿일 때 세로 간격
+    GUTTER: 108,     // 좌측 swimlane 라벨 폭 (화면 px)
+    HEADER: 46,      // 상단 모듈 라벨 + order 눈금 높이 (화면 px)
+    HDR_ROW1: 26,
+    ARC_BASE: 16,    // arc 최소 높이
+    ARC_K: 20        // arc 높이 = ARC_BASE + ARC_K * sqrt(step 거리)
+  };
+
+  const FONT = getComputedStyle(document.body).getPropertyValue('--font') || 'sans-serif';
+
+  /* ==========================================================================
+   * 2. 앱 공유 상태 (2·3단계의 선택·필터·뷰 전환이 이 객체를 공유)
+   * ======================================================================== */
+  const App = {
+    model: null,     // 정규화된 데이터 {nodes, edges, nodeById, issues}
+    layout: null,    // Flow 뷰 좌표
+    state: {
+      view: 'flow',            // 'flow' | 'dsm'
+      selectedNodeId: null,    // (2단계) Focus 대상
+      hop: 1,                  // (2단계) Focus hop 깊이
+      filters: {               // (2단계) 필터
+        types: new Set(TYPE_KEYS.concat('ETC')),
+        minSeverity: 1,
+        modules: null,
+        longRangeOnly: false,
+        longRangeN: 5
+      }
+    },
+    view: { k: 1, tx: 0, ty: 0, W: 0, H: 0 }  // Flow 뷰 줌/팬 상태
+  };
+
+  /* ==========================================================================
+   * 3. 유틸
+   * ======================================================================== */
+
+  // SVG/HTML 문자열 이스케이프 (업로드 데이터가 들어와도 안전하게)
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  // DOM 요소 생성 (textContent 사용 → XSS 안전)
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const r1 = v => Math.round(v * 10) / 10;
+
+  // 텍스트 폭 측정 + 말줄임 (canvas measureText, 결과 캐시)
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  const measureCache = new Map();
+  function textWidth(text, font) {
+    const key = font + '|' + text;
+    let w = measureCache.get(key);
+    if (w === undefined) {
+      measureCtx.font = font;
+      w = measureCtx.measureText(text).width;
+      measureCache.set(key, w);
+    }
+    return w;
+  }
+  function truncate(text, maxW, font) {
+    if (textWidth(text, font) <= maxW) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (textWidth(text.slice(0, mid) + '…', font) <= maxW) lo = mid; else hi = mid - 1;
+    }
+    return lo > 0 ? text.slice(0, lo) + '…' : '';
+  }
+
+  /* ==========================================================================
+   * 4. 데이터 로드 · 정규화 · 검증
+   * ======================================================================== */
+
+  // 내장 <script type="application/json" id="data"> 읽기
+  function loadEmbeddedData() {
+    const txt = document.getElementById('data').textContent;
+    return JSON.parse(txt);
+  }
+
+  /**
+   * 원시 데이터를 정규화하고 검증한다.
+   * - 중복 id: 첫 번째 노드만 사용
+   * - 없는 id 참조 / 자기참조 엣지: 렌더링에서 제외
+   * - 알 수 없는 unit/type, 범위 밖 severity: 경고 후 보정
+   * 반환: { nodes, edges, nodeById, issues[] }
+   */
+  function normalizeAndValidate(raw) {
+    const issues = [];
+    const nodes = [];
+    const nodeById = new Map();
+    const rawNodes = Array.isArray(raw && raw.nodes) ? raw.nodes : [];
+    const rawEdges = Array.isArray(raw && raw.edges) ? raw.edges : [];
+    if (!rawNodes.length) issues.push({ level: 'error', msg: 'nodes 배열이 비어 있거나 없습니다.' });
+
+    rawNodes.forEach((n, i) => {
+      const id = n && n.id != null ? String(n.id).trim() : '';
+      if (!id) { issues.push({ level: 'error', msg: `nodes[${i}]: id가 없습니다 — 제외` }); return; }
+      if (nodeById.has(id)) {
+        issues.push({ level: 'error', msg: `중복 id "${id}" (nodes[${i}]) — 첫 번째 노드만 사용` });
+        return;
+      }
+      let unit = String(n.unit == null ? '' : n.unit).trim().toUpperCase();
+      if (!UNIT_ORDER.includes(unit)) {
+        issues.push({ level: 'warn', msg: `노드 "${id}": 알 수 없는 unit "${n.unit}" — 별도 lane에 표시` });
+        if (!unit) unit = 'ETC';
+      }
+      let order = Number(n.order);
+      if (!Number.isFinite(order)) {
+        issues.push({ level: 'warn', msg: `노드 "${id}": order가 숫자가 아님 ("${n.order}") — 맨 뒤로 배치` });
+        order = Infinity;
+      }
+      const node = {
+        id,
+        name: n.name != null && String(n.name).trim() ? String(n.name).trim() : id,
+        module: n.module != null && String(n.module).trim() ? String(n.module).trim() : '(미지정)',
+        unit,
+        order,
+        i: nodes.length,
+        inE: [],   // 이 노드가 영향받는 엣지
+        outE: []   // 이 노드가 영향주는 엣지
+      };
+      nodes.push(node);
+      nodeById.set(id, node);
+    });
+    // order가 없던 노드는 마지막 order 뒤로
+    const finiteMax = nodes.reduce((m, n) => Number.isFinite(n.order) ? Math.max(m, n.order) : m, 0);
+    nodes.forEach(n => { if (!Number.isFinite(n.order)) n.order = finiteMax + 1; });
+
+    const edges = [];
+    const seen = new Set();
+    rawEdges.forEach((e, i) => {
+      const sId = e && e.source != null ? String(e.source).trim() : '';
+      const tId = e && e.target != null ? String(e.target).trim() : '';
+      const s = nodeById.get(sId), t = nodeById.get(tId);
+      if (!s || !t) {
+        const missing = [!s ? `source "${sId}"` : null, !t ? `target "${tId}"` : null].filter(Boolean).join(', ');
+        issues.push({ level: 'error', msg: `edges[${i}]: 없는 id 참조 (${missing}) — 제외` });
+        return;
+      }
+      if (s === t) {
+        issues.push({ level: 'error', msg: `edges[${i}]: 자기참조 엣지 ("${sId}" → "${tId}") — 제외` });
+        return;
+      }
+      let type = String(e.type == null ? '' : e.type).trim().toUpperCase();
+      if (!TYPE_KEYS.includes(type)) {
+        issues.push({ level: 'warn', msg: `edges[${i}] (${sId}→${tId}): 알 수 없는 type "${e.type}" — 기타로 표시` });
+        type = 'ETC';
+      }
+      let sev = Math.round(Number(e.severity));
+      if (!(sev >= 1 && sev <= 3)) {
+        issues.push({ level: 'warn', msg: `edges[${i}] (${sId}→${tId}): severity "${e.severity}" 범위 밖 — 1~3으로 보정` });
+        sev = Number.isFinite(sev) ? clamp(sev, 1, 3) : 1;
+      }
+      const key = sId + '\u0000' + tId + '\u0000' + type;
+      if (seen.has(key)) issues.push({ level: 'warn', msg: `edges[${i}]: 중복 엣지 (${sId}→${tId}, ${type})` });
+      seen.add(key);
+
+      const edge = {
+        i: edges.length,
+        source: sId, target: tId, s, t,
+        type, severity: sev,
+        mechanism: e.mechanism != null ? String(e.mechanism) : '',
+        // 선행→후속(fwd) / 후속 공정이 선행 결과를 변형(bwd). 같은 order는 fwd로 취급
+        dir: s.order <= t.order ? 'fwd' : 'bwd'
+      };
+      edges.push(edge);
+      s.outE.push(edge);
+      t.inE.push(edge);
+    });
+
+    return { nodes, edges, nodeById, issues };
+  }
+
+  /* ==========================================================================
+   * 5. Flow 레이아웃 계산 (고정 좌표, force layout 없음)
+   *    x = order 순위(열), y = unit swimlane
+   * ======================================================================== */
+  function computeLayout(model) {
+    const { nodes, edges } = model;
+
+    // (1) 고유 order → 열 index (order 값이 띄엄띄엄이어도 촘촘하게 배치)
+    const orders = [...new Set(nodes.map(n => n.order))].sort((a, b) => a - b);
+    const colOf = new Map(orders.map((o, i) => [o, i]));
+
+    // (2) lane 목록: 정의된 unit 8종 + 알 수 없는 unit
+    const extra = [...new Set(nodes.map(n => n.unit))].filter(u => !UNIT_ORDER.includes(u)).sort();
+    const laneUnits = UNIT_ORDER.concat(extra);
+
+    // (3) 같은 lane·같은 열에 여러 노드가 있으면 세로 slot으로 쌓기
+    const slotCounter = new Map();
+    const laneSlots = new Map(laneUnits.map(u => [u, 1]));
+    const sorted = nodes.slice().sort((a, b) => a.order - b.order || a.i - b.i);
+    sorted.forEach(n => {
+      n.col = colOf.get(n.order);
+      const key = n.unit + '|' + n.col;
+      n.slot = slotCounter.get(key) || 0;
+      slotCounter.set(key, n.slot + 1);
+      laneSlots.set(n.unit, Math.max(laneSlots.get(n.unit), n.slot + 1));
+    });
+
+    // (4) lane y 좌표
+    const lanes = [];
+    const laneByUnit = new Map();
+    let y = 0;
+    laneUnits.forEach(u => {
+      const slots = laneSlots.get(u);
+      const h = L.LANE_PAD * 2 + slots * L.NODE_H + (slots - 1) * L.SLOT_GAP;
+      const lane = { unit: u, y, h };
+      lanes.push(lane);
+      laneByUnit.set(u, lane);
+      y += h;
+    });
+    const lanesH = y;
+
+    // (5) 노드 좌표
+    nodes.forEach(n => {
+      const lane = laneByUnit.get(n.unit);
+      n.x = n.col * L.COL_W + (L.COL_W - L.NODE_W) / 2;
+      n.y = lane.y + L.LANE_PAD + n.slot * (L.NODE_H + L.SLOT_GAP);
+      n.cx = n.x + L.NODE_W / 2;
+    });
+
+    // (6) module 띠: 열을 순서대로 훑으며 같은 module이 연속된 구간(run)을 하나의 띠로
+    const colModule = new Array(orders.length).fill(null);
+    sorted.forEach(n => { if (colModule[n.col] == null) colModule[n.col] = n.module; });
+    const bands = [];
+    colModule.forEach((m, c) => {
+      const last = bands[bands.length - 1];
+      if (last && last.module === m) last.c1 = c;
+      else bands.push({ module: m, c0: c, c1: c });
+    });
+    const moduleCount = new Map();
+    nodes.forEach(n => moduleCount.set(n.module, (moduleCount.get(n.module) || 0) + 1));
+    bands.forEach(b => {
+      b.x = b.c0 * L.COL_W;
+      b.w = (b.c1 - b.c0 + 1) * L.COL_W;
+      b.count = moduleCount.get(b.module) || 0;
+      b.o0 = orders[b.c0]; b.o1 = orders[b.c1];
+    });
+
+    // (7) 엣지 연결점(port) 분산: fwd는 노드 윗변, bwd는 아랫변.
+    //     arc가 서로 덜 교차하도록 [가까운 왼쪽 … 먼 왼쪽 | 먼 오른쪽 … 가까운 오른쪽] 순으로 배치
+    const ports = new Map();  // key: nodeIdx|side → [{edge, end, other}]
+    const pushPort = (node, side, edge, end, other) => {
+      const key = node.i + '|' + side;
+      let arr = ports.get(key);
+      if (!arr) { arr = []; ports.set(key, arr); }
+      arr.push({ edge, end, dx: other.cx - node.cx, dist: Math.abs(other.col - node.col) });
+    };
+    edges.forEach(e => {
+      const side = e.dir === 'fwd' ? 'top' : 'bot';
+      pushPort(e.s, side, e, 's', e.t);
+      pushPort(e.t, side, e, 't', e.s);
+    });
+    const portX = new Map(); // edge.i + end → x
+    ports.forEach((arr, key) => {
+      const node = nodes[+key.split('|')[0]];
+      arr.forEach(p => {
+        p.g = p.dx < 0 ? 0 : p.dx > 0 ? 2 : 1;
+        p.k = p.g === 0 ? p.dist : p.g === 2 ? -p.dist : 0;
+      });
+      arr.sort((a, b) => a.g - b.g || a.k - b.k || a.edge.i - b.edge.i);
+      const n = arr.length;
+      const step = n > 1 ? Math.min(10, (L.NODE_W - 16) / (n - 1)) : 0;
+      arr.forEach((p, i) => portX.set(p.edge.i + p.end, node.cx + (i - (n - 1) / 2) * step));
+    });
+
+    // (8) 엣지 arc 경로 (cubic bezier). fwd: 위로 휘는 실선, bwd: 아래로 휘는 점선
+    let minY = 0, maxY = lanesH;
+    edges.forEach(e => {
+      const x1 = portX.get(e.i + 's'), x2 = portX.get(e.i + 't');
+      const span = Math.abs(e.t.col - e.s.col);
+      e.span = span;
+      const h = L.ARC_BASE + L.ARC_K * Math.sqrt(Math.max(span, 0.5));
+      let y1, y2, cy;
+      if (e.dir === 'fwd') {
+        y1 = e.s.y; y2 = e.t.y;
+        cy = Math.min(y1, y2) - h;
+        minY = Math.min(minY, 0.75 * cy + 0.25 * Math.min(y1, y2));
+      } else {
+        y1 = e.s.y + L.NODE_H; y2 = e.t.y + L.NODE_H;
+        cy = Math.max(y1, y2) + h;
+        maxY = Math.max(maxY, 0.75 * cy + 0.25 * Math.max(y1, y2));
+      }
+      // 같은 열(동일 order)끼리는 고리 모양으로 벌려줌
+      let c1x = x1, c2x = x2;
+      if (Math.abs(x2 - x1) < 4) { c1x = x1 - 30; c2x = x2 + 30; }
+      e.d = `M${r1(x1)},${r1(y1)}C${r1(c1x)},${r1(cy)} ${r1(c2x)},${r1(cy)} ${r1(x2)},${r1(y2)}`;
+    });
+
+    const bounds = {
+      minX: 0,
+      maxX: Math.max(1, orders.length) * L.COL_W,
+      minY: Math.floor(minY - 18),
+      maxY: Math.ceil(maxY + 18)
+    };
+    return { orders, lanes, bands, bounds, lanesH };
+  }
+
+  /* ==========================================================================
+   * 6. Flow 뷰 렌더링 (데이터가 바뀔 때만 DOM 재생성)
+   * ======================================================================== */
+  const $ = id => document.getElementById(id);
+  const svg = $('flowSvg');        // 콘텐츠 SVG (줌 확정 배율로 래스터)
+  const mainEl = $('flowMain');    // 이벤트 수신 컨테이너
+
+  function buildFlow() {
+    const { model, layout } = App;
+    const B = layout.bounds;
+
+    // --- 화살표 marker: type × severity 조합 ---
+    let defs = '';
+    Object.keys(TYPE_META).forEach(t => {
+      [1, 2, 3].forEach(s => {
+        const sz = MARKER_SIZE[s];
+        defs += `<marker id="arr-${t}-${s}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="${sz}" markerHeight="${sz}" markerUnits="userSpaceOnUse" orient="auto">` +
+                `<path d="M0,1L10,5L0,9z" fill="${TYPE_META[t].color}"/></marker>`;
+      });
+    });
+    $('flowDefs').innerHTML = defs;
+
+    // --- module 배경 띠 ---
+    let bands = '';
+    layout.bands.forEach((b, i) => {
+      bands += `<rect class="${i % 2 ? 'band-b' : 'band-a'}" x="${b.x}" y="${B.minY}" width="${b.w}" height="${B.maxY - B.minY}"/>`;
+      if (i > 0) bands += `<line class="band-line" x1="${b.x}" x2="${b.x}" y1="${B.minY}" y2="${B.maxY}"/>`;
+    });
+    $('layerBands').innerHTML = bands;
+
+    // --- swimlane 경계선 ---
+    let lanes = '';
+    layout.lanes.forEach((ln, i) => {
+      if (i > 0) lanes += `<line class="lane-line" x1="${B.minX}" x2="${B.maxX}" y1="${ln.y}" y2="${ln.y}"/>`;
+    });
+    $('layerLanes').innerHTML = lanes;
+
+    // --- 엣지: severity 낮은 것부터 그려 높은 것이 위에 오도록 ---
+    const order = model.edges.slice().sort((a, b) => a.severity - b.severity || (a.dir === 'bwd') - (b.dir === 'bwd'));
+    let ep = '', hp = '';
+    order.forEach(e => {
+      const c = TYPE_META[e.type].color;
+      ep += `<path class="edge ${e.dir}" d="${e.d}" stroke="${c}" stroke-width="${SEV_WIDTH[e.severity]}" marker-end="url(#arr-${e.type}-${e.severity})" data-i="${e.i}"/>`;
+      hp += `<path d="${e.d}" data-kind="edge" data-i="${e.i}"/>`;
+    });
+    $('layerEdges').innerHTML = ep;
+    $('layerEdgeHits').innerHTML = hp;
+    $('layerHover').innerHTML = '';
+
+    // --- 노드 ---
+    const nodeFont = `500 11.5px ${FONT}`;
+    let np = '';
+    model.nodes.forEach(n => {
+      const label = truncate(n.name, L.NODE_W - 12, nodeFont);
+      np += `<g class="node" data-kind="node" data-i="${n.i}" transform="translate(${n.x},${n.y})">` +
+            `<rect width="${L.NODE_W}" height="${L.NODE_H}" rx="6"/>` +
+            `<text x="${L.NODE_W / 2}" y="${L.NODE_H / 2 + 4}" text-anchor="middle">${esc(label)}</text></g>`;
+    });
+    $('layerNodes').innerHTML = np;
+    nodeEls = $('layerNodes').children;
+    svg.setAttribute('viewBox', `${B.minX} ${B.minY} ${B.maxX - B.minX} ${B.maxY - B.minY}`);
+    committedK = 0;
+
+    buildHeader();
+    buildGutter();
+    buildMinimap();
+    buildLegend();
+    renderIssues();
+    $('statCounts').textContent = `노드 ${model.nodes.length} · 엣지 ${model.edges.length} · 모듈 ${new Set(model.nodes.map(n => n.module)).size}`;
+  }
+  let nodeEls = null;
+
+  /* ---------- 고정 헤더: module 라벨(1행) + order 눈금(2행) ---------- */
+  let hdrItems = [];   // {band, rect, line, text}
+  let tickEls = [];
+  function buildHeader() {
+    const inner = $('hdrInner');
+    const { layout } = App;
+    let s = '';
+    layout.bands.forEach((b, i) => {
+      s += `<rect class="${i % 2 ? 'hdr-band-b' : 'hdr-band-a'}" data-kind="module" data-b="${i}" y="0" height="${L.HEADER}"/>` +
+           (i > 0 ? `<line class="hdr-band-line" y1="0" y2="${L.HEADER}"/>` : '<line style="display:none"/>') +
+           `<text class="hdr-mod" y="17" text-anchor="middle" pointer-events="none"></text>`;
+    });
+    layout.orders.forEach(o => {
+      s += `<text class="hdr-tick" y="${L.HDR_ROW1 + 14}" text-anchor="middle">${esc(o)}</text>`;
+    });
+    inner.innerHTML = s;
+    const kids = inner.children;
+    hdrItems = layout.bands.map((b, i) => ({ band: b, rect: kids[i * 3], line: kids[i * 3 + 1], text: kids[i * 3 + 2] }));
+    tickEls = Array.from(kids).slice(layout.bands.length * 3);
+    $('hdrBg').setAttribute('height', L.HEADER);
+    $('hdrBorder').setAttribute('y1', L.HEADER);
+    $('hdrBorder').setAttribute('y2', L.HEADER);
+  }
+  // 줌 배율(k)이 바뀔 때만 헤더 요소 x 위치 재계산 (팬은 그룹 translate로 처리)
+  function layoutHeader(k) {
+    const modFont = `700 12px ${FONT}`;
+    hdrItems.forEach(it => {
+      const x = it.band.x * k, w = it.band.w * k;
+      it.rect.setAttribute('x', x); it.rect.setAttribute('width', w);
+      it.line.setAttribute('x1', x); it.line.setAttribute('x2', x);
+      it.text.setAttribute('x', x + w / 2);
+      it.text.textContent = truncate(it.band.module, w - 10, modFont);
+    });
+    const colPx = L.COL_W * k;
+    const step = Math.max(1, Math.ceil(28 / colPx));
+    tickEls.forEach((t, c) => {
+      if (c % step === 0) {
+        t.removeAttribute('display');
+        t.setAttribute('x', (c + 0.5) * colPx);
+      } else t.setAttribute('display', 'none');
+    });
+  }
+
+  /* ---------- 고정 좌측: unit swimlane 라벨 ---------- */
+  let gutterItems = [];
+  function buildGutter() {
+    const inner = $('gutterInner');
+    let s = '';
+    App.layout.lanes.forEach((ln, i) => {
+      s += `<rect class="${i % 2 ? 'gut-lane-b' : 'gut-lane-a'}" x="0" width="${L.GUTTER}"/>` +
+           `<text class="gut-unit" x="14"></text>` +
+           `<text class="gut-sub" x="14"></text>`;
+    });
+    inner.innerHTML = s;
+    const kids = inner.children;
+    gutterItems = App.layout.lanes.map((ln, i) => {
+      const it = { lane: ln, rect: kids[i * 3], unit: kids[i * 3 + 1], sub: kids[i * 3 + 2] };
+      it.unit.textContent = ln.unit;
+      it.sub.textContent = UNIT_LABEL[ln.unit] || '미정의 unit';
+      return it;
+    });
+    $('gutterBg').setAttribute('width', L.GUTTER);
+    $('gutterBorder').setAttribute('x1', L.GUTTER);
+    $('gutterBorder').setAttribute('x2', L.GUTTER);
+    $('corner').setAttribute('width', L.GUTTER);
+    $('corner').setAttribute('height', L.HEADER);
+    const c1 = $('cornerText1'), c2 = $('cornerText2');
+    c1.setAttribute('x', 12); c1.setAttribute('y', 18); c1.textContent = 'MODULE';
+    c2.setAttribute('x', 12); c2.setAttribute('y', L.HDR_ROW1 + 14); c2.textContent = 'ORDER / UNIT';
+  }
+  function layoutGutter(k) {
+    gutterItems.forEach(it => {
+      const y = it.lane.y * k, h = it.lane.h * k;
+      it.rect.setAttribute('y', y); it.rect.setAttribute('height', h);
+      const showSub = h >= 34, showUnit = h >= 13;
+      it.unit.setAttribute('display', showUnit ? 'inline' : 'none');
+      it.sub.setAttribute('display', showSub ? 'inline' : 'none');
+      it.unit.setAttribute('y', showSub ? y + h / 2 - 2 : y + h / 2 + 4);
+      it.sub.setAttribute('y', y + h / 2 + 12);
+    });
+  }
+
+  /* ==========================================================================
+   * 7. 줌 / 팬 / 가로 스크롤
+   * ======================================================================== */
+  /*
+   * 렌더링 전략 (300 노드 · 1500 엣지에서도 끊김 없게):
+   *  - 콘텐츠 SVG는 '확정 배율(committedK)'로 크기를 잡아 한 번 래스터
+   *  - 팬: CSS translate만 변경 → GPU 합성만 일어나고 재래스터 없음
+   *  - 휠 줌 진행 중: CSS scale(k / committedK)로 즉시 반응, 휠이 멈추면 commitZoom()으로 선명하게 재래스터
+   */
+  let rafId = 0, lastK = -1, committedK = 0, zoomGesture = false, zoomTimer = 0;
+
+  // 변환 적용을 다음 프레임으로 모아서 한 번만 처리
+  function scheduleRender() {
+    if (!rafId) rafId = requestAnimationFrame(renderTransform);
+  }
+  // 현재 배율을 SVG 실제 크기에 반영 (재래스터 발생)
+  function commitZoom() {
+    const B = App.layout.bounds;
+    committedK = App.view.k;
+    svg.setAttribute('width', Math.max(1, Math.round((B.maxX - B.minX) * committedK)));
+    svg.setAttribute('height', Math.max(1, Math.round((B.maxY - B.minY) * committedK)));
+    svg.classList.toggle('lod-far', committedK < 0.42);   // 너무 작으면 노드 라벨 숨김
+  }
+  function renderTransform() {
+    rafId = 0;
+    const v = App.view, B = App.layout.bounds;
+    if (v.k !== committedK && !zoomGesture) commitZoom();
+    const s = v.k / committedK;
+    const x = Math.round(v.tx + B.minX * v.k), y = Math.round(v.ty + B.minY * v.k);
+    svg.style.transform = s === 1 ? `translate(${x}px,${y}px)` : `translate(${x}px,${y}px) scale(${s})`;
+    $('hdrInner').setAttribute('transform', `translate(${r1(v.tx)},0)`);
+    $('gutterInner').setAttribute('transform', `translate(0,${r1(v.ty)})`);
+    if (v.k !== lastK) {
+      lastK = v.k;
+      layoutHeader(v.k);
+      layoutGutter(v.k);
+      $('zoomVal').textContent = Math.round(v.k * 100) + '%';
+    }
+    updateMiniWindow();
+  }
+
+  // 화면 안에 콘텐츠가 최소한 걸쳐 있도록 팬 범위 제한
+  function clampView() {
+    const v = App.view, B = App.layout.bounds;
+    const left = L.GUTTER + 24, right = v.W - 24, top = L.HEADER + 12, bottom = v.H - 12;
+    const lo = Math.min(left - B.minX * v.k, right - B.maxX * v.k);
+    const hi = Math.max(left - B.minX * v.k, right - B.maxX * v.k);
+    v.tx = clamp(v.tx, lo, hi);
+    const loY = Math.min(top - B.minY * v.k, bottom - B.maxY * v.k);
+    const hiY = Math.max(top - B.minY * v.k, bottom - B.maxY * v.k);
+    v.ty = clamp(v.ty, loY, hiY);
+  }
+  function kLimits() {
+    const v = App.view, B = App.layout.bounds;
+    const fitAll = Math.min((v.W - L.GUTTER - 40) / (B.maxX - B.minX), (v.H - L.HEADER - 24) / (B.maxY - B.minY));
+    // 노드 300개급 데이터는 전체 맞춤 시 너무 작아지므로 하한 0.12 (전체 개요는 미니맵이 담당)
+    return { min: clamp(fitAll * 0.9, 0.12, 0.25), max: 3 };
+  }
+  // 화면 좌표 (px, py)를 기준으로 줌
+  function zoomAt(factor, px, py) {
+    const v = App.view, lim = kLimits();
+    const k2 = clamp(v.k * factor, lim.min, lim.max);
+    if (k2 === v.k) return;
+    v.tx = px - (px - v.tx) * (k2 / v.k);
+    v.ty = py - (py - v.ty) * (k2 / v.k);
+    v.k = k2;
+    clampView();
+    scheduleRender();
+  }
+  function panBy(dx, dy) {
+    App.view.tx += dx; App.view.ty += dy;
+    clampView(); scheduleRender();
+  }
+  // 전체 보기
+  function fitAll() {
+    const v = App.view, B = App.layout.bounds;
+    const pw = v.W - L.GUTTER - 40, ph = v.H - L.HEADER - 24;
+    v.k = clamp(Math.min(pw / (B.maxX - B.minX), ph / (B.maxY - B.minY)), kLimits().min, 1.5);
+    v.tx = L.GUTTER + 20 + (pw - (B.maxX - B.minX) * v.k) / 2 - B.minX * v.k;
+    v.ty = L.HEADER + 12 + (ph - (B.maxY - B.minY) * v.k) / 2 - B.minY * v.k;
+    clampView(); scheduleRender();
+  }
+  // 높이 맞춤: 세로를 화면에 맞추고 가로는 스크롤 (기본 시작 뷰)
+  function fitHeight(keepX) {
+    const v = App.view, B = App.layout.bounds;
+    const ph = v.H - L.HEADER - 24;
+    const oldK = v.k;
+    const centerContentX = (v.W / 2 - v.tx) / oldK;
+    v.k = clamp(ph / (B.maxY - B.minY), 0.45, 1.2);
+    v.ty = L.HEADER + 12 + (ph - (B.maxY - B.minY) * v.k) / 2 - B.minY * v.k;
+    v.tx = keepX ? v.W / 2 - centerContentX * v.k : L.GUTTER + 20 - B.minX * v.k;
+    clampView(); scheduleRender();
+  }
+
+  // 줌·팬 진행 중 표시 (이 동안은 hover 판정을 건너뜀).
+  // DOM class 토글은 1500개 요소 스타일 재계산을 유발하므로 JS 플래그만 사용
+  let interactTimer = 0, interacting = false;
+  function markInteracting() {
+    interacting = true;
+    clearTimeout(interactTimer);
+    interactTimer = setTimeout(() => { interacting = false; }, 140);
+  }
+
+  // 휠: 기본 = 줌, Shift+휠 또는 가로 휠(트랙패드) = 가로 스크롤
+  mainEl.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    hideTip();
+    markInteracting();
+    const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? App.view.H : 1;
+    const dx = ev.deltaX * unit, dy = ev.deltaY * unit;
+    if (ev.shiftKey) { panBy(-(dy || dx), 0); return; }
+    if (Math.abs(dx) > Math.abs(dy)) { panBy(-dx, 0); return; }
+    const rect = mainEl.getBoundingClientRect();
+    // 휠 줌 제스처 동안에는 CSS scale로만 반응, 멈춘 뒤 확정
+    zoomGesture = true;
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => { zoomGesture = false; scheduleRender(); }, 160);
+    zoomAt(Math.exp(-dy * 0.0016), ev.clientX - rect.left, ev.clientY - rect.top);
+  }, { passive: false });
+
+  // 드래그 팬 (3px 이상 움직이면 드래그로 판단 → 2단계 클릭 판정과 구분)
+  const drag = { active: false, moved: false, x: 0, y: 0, id: null };
+  mainEl.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    drag.active = true; drag.moved = false;
+    drag.x = ev.clientX; drag.y = ev.clientY; drag.id = ev.pointerId;
+    mainEl.focus({ preventScroll: true });
+  });
+  mainEl.addEventListener('pointermove', ev => {
+    if (drag.active && ev.pointerId === drag.id) {
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        mainEl.setPointerCapture(ev.pointerId);
+        mainEl.classList.add('dragging');
+        hideTip();
+      }
+      drag.x = ev.clientX; drag.y = ev.clientY;
+      markInteracting();
+      panBy(dx, dy);
+      return;
+    }
+    onHoverMove(ev);
+  });
+  const endDrag = ev => {
+    if (!drag.active || ev.pointerId !== drag.id) return;
+    drag.active = false;
+    mainEl.classList.remove('dragging');
+    if (mainEl.hasPointerCapture(ev.pointerId)) mainEl.releasePointerCapture(ev.pointerId);
+  };
+  mainEl.addEventListener('pointerup', endDrag);
+  mainEl.addEventListener('pointercancel', endDrag);
+  mainEl.addEventListener('pointerleave', () => { if (!drag.active) clearHover(); });
+
+  // 키보드 단축키
+  mainEl.addEventListener('keydown', ev => {
+    const v = App.view;
+    switch (ev.key) {
+      case '+': case '=': zoomAt(1.25, v.W / 2, v.H / 2); break;
+      case '-': case '_': zoomAt(0.8, v.W / 2, v.H / 2); break;
+      case 'f': case 'F': fitAll(); break;
+      case 'h': case 'H': fitHeight(true); break;
+      case 'ArrowLeft': panBy(v.W * 0.25, 0); break;
+      case 'ArrowRight': panBy(-v.W * 0.25, 0); break;
+      case 'ArrowUp': panBy(0, v.H * 0.2); break;
+      case 'ArrowDown': panBy(0, -v.H * 0.2); break;
+      case 'Home': v.tx = 1e9; clampView(); scheduleRender(); break;
+      case 'End': v.tx = -1e9; clampView(); scheduleRender(); break;
+      default: return;
+    }
+    ev.preventDefault();
+  });
+
+  $('btnZoomIn').onclick = () => zoomAt(1.25, App.view.W / 2, App.view.H / 2);
+  $('btnZoomOut').onclick = () => zoomAt(0.8, App.view.W / 2, App.view.H / 2);
+  $('btnFitAll').onclick = fitAll;
+  $('btnFitH').onclick = () => fitHeight(true);
+
+  /* ==========================================================================
+   * 8. 미니맵 (전체 개요 + 가로 스크롤 바 역할)
+   * ======================================================================== */
+  const mini = { sx: 1, sy: 1, ox: 0, oy: 0, W: 0, H: 0 };
+  function buildMinimap() {
+    const { model, layout } = App;
+    const B = layout.bounds;
+    let s = '';
+    layout.bands.forEach((b, i) => {
+      s += `<rect class="${i % 2 ? 'band-b' : 'band-a'}" x="${b.x}" y="${B.minY}" width="${b.w}" height="${B.maxY - B.minY}"/>`;
+    });
+    model.edges.forEach(e => {
+      s += `<path class="mini-edge" d="${e.d}" stroke="${TYPE_META[e.type].color}"/>`;
+    });
+    model.nodes.forEach(n => {
+      s += `<rect class="mini-node" x="${n.x}" y="${n.y}" width="${L.NODE_W}" height="${L.NODE_H}"/>`;
+    });
+    $('miniContent').innerHTML = s;
+    layoutMinimap();
+  }
+  // 미니맵 크기 변경 시 축척 재계산
+  function layoutMinimap() {
+    const r = $('miniSvg').getBoundingClientRect();
+    mini.W = r.width; mini.H = r.height;
+    if (!App.layout || !mini.W) return;
+    const B = App.layout.bounds, pad = 4;
+    mini.sx = (mini.W - pad * 2) / (B.maxX - B.minX);
+    mini.sy = (mini.H - pad * 2) / (B.maxY - B.minY);
+    mini.ox = pad - B.minX * mini.sx;
+    mini.oy = pad - B.minY * mini.sy;
+    $('miniContent').setAttribute('transform', `translate(${mini.ox},${mini.oy}) scale(${mini.sx},${mini.sy})`);
+    updateMiniWindow();
+  }
+  // 현재 보이는 영역을 미니맵 사각형으로 표시
+  function updateMiniWindow() {
+    const v = App.view, w = $('miniWin');
+    if (!App.layout || !mini.W) return;
+    const x0 = (L.GUTTER - v.tx) / v.k, x1 = (v.W - v.tx) / v.k;
+    const y0 = (L.HEADER - v.ty) / v.k, y1 = (v.H - v.ty) / v.k;
+    const B = App.layout.bounds;
+    const cx0 = Math.max(x0, B.minX), cx1 = Math.min(x1, B.maxX);
+    const cy0 = Math.max(y0, B.minY), cy1 = Math.min(y1, B.maxY);
+    const bw = Math.max(4, (cx1 - cx0) * mini.sx), bh = Math.max(4, (cy1 - cy0) * mini.sy);
+    w.style.width = bw + 'px';
+    w.style.height = bh + 'px';
+    w.style.transform = `translate(${mini.ox + cx0 * mini.sx}px,${mini.oy + cy0 * mini.sy}px)`;
+  }
+  // 미니맵 클릭/드래그 → 해당 위치가 화면 중앙에 오도록 이동
+  (function bindMinimap() {
+    const ms = $('miniBox');
+    let down = false;
+    const moveTo = ev => {
+      const r = ms.getBoundingClientRect();
+      const v = App.view;
+      const cx = (ev.clientX - r.left - mini.ox) / mini.sx;
+      const cy = (ev.clientY - r.top - mini.oy) / mini.sy;
+      v.tx = L.GUTTER + (v.W - L.GUTTER) / 2 - cx * v.k;
+      v.ty = L.HEADER + (v.H - L.HEADER) / 2 - cy * v.k;
+      clampView(); scheduleRender();
+    };
+    ms.addEventListener('pointerdown', ev => { down = true; ms.setPointerCapture(ev.pointerId); markInteracting(); moveTo(ev); });
+    ms.addEventListener('pointermove', ev => { if (down) { markInteracting(); moveTo(ev); } });
+    ms.addEventListener('pointerup', ev => { down = false; ms.releasePointerCapture(ev.pointerId); });
+    ms.addEventListener('wheel', ev => {
+      ev.preventDefault();
+      panBy(-(ev.deltaY || ev.deltaX) * 2, 0);
+    }, { passive: false });
+  })();
+
+  /* ==========================================================================
+   * 9. Hover 툴팁 + 강조
+   * ======================================================================== */
+  const tip = $('tooltip');
+  let hoverEl = null;
+
+  // 포인터 아래 요소(노드/엣지/모듈)를 찾아 툴팁·강조 갱신
+  function onHoverMove(ev) {
+    if (interacting) return;
+    const target = ev.target.closest ? ev.target.closest('[data-kind]') : null;
+    if (target !== hoverEl) {
+      clearHover();
+      hoverEl = target;
+      if (target) {
+        const kind = target.getAttribute('data-kind');
+        if (kind === 'node') hoverNode(App.model.nodes[+target.getAttribute('data-i')], target);
+        else if (kind === 'edge') hoverEdge(App.model.edges[+target.getAttribute('data-i')]);
+        else if (kind === 'module') hoverModule(App.layout.bands[+target.getAttribute('data-b')]);
+      }
+    }
+    if (hoverEl) placeTip(ev.clientX, ev.clientY);
+  }
+  function clearHover() {
+    if (!hoverEl) return;
+    hoverEl = null;
+    hideTip();
+    $('layerHover').innerHTML = '';
+    svg.querySelectorAll('.node.is-hover, .node.hl-end').forEach(n => n.classList.remove('is-hover', 'hl-end'));
+  }
+  function hideTip() { tip.hidden = true; }
+
+  // 강조용 오버레이 엣지(흰 halo + 굵은 선)를 그림
+  function overlayEdges(edges) {
+    let s = '';
+    edges.forEach(e => {
+      const w = SEV_WIDTH[e.severity];
+      s += `<path class="hover-halo" d="${e.d}" stroke-width="${w + 5}"/>`;
+    });
+    edges.forEach(e => {
+      const w = SEV_WIDTH[e.severity];
+      s += `<path class="hover-edge ${e.dir}" d="${e.d}" stroke="${TYPE_META[e.type].color}" stroke-width="${w + 1.5}" marker-end="url(#arr-${e.type}-${e.severity})"/>`;
+    });
+    $('layerHover').innerHTML = s;
+  }
+
+  // 노드 hover: 테두리 강조 + 연결 엣지 미리보기 + 툴팁
+  function hoverNode(n, g) {
+    g.classList.add('is-hover');
+    overlayEdges(n.inE.concat(n.outE));
+    tip.replaceChildren();
+    tip.append(el('div', 'tt-title', n.name));
+    const grid = el('div', 'tt-grid');
+    addRow(grid, 'Module', n.module);
+    addRow(grid, 'Unit', `${n.unit} · ${UNIT_LABEL[n.unit] || '미정의'}`);
+    addRow(grid, 'Order', String(n.order));
+    addRow(grid, 'ID', n.id);
+    addRow(grid, '연계', `받는 영향 ${n.inE.length} · 주는 영향 ${n.outE.length}`);
+    tip.append(grid);
+    tip.hidden = false;
+  }
+
+  // 엣지 hover: 해당 엣지 강조 + 양 끝 노드 강조 + 툴팁
+  function hoverEdge(e) {
+    overlayEdges([e]);
+    nodeEls[e.s.i].classList.add('hl-end');
+    nodeEls[e.t.i].classList.add('hl-end');
+    const meta = TYPE_META[e.type];
+    tip.replaceChildren();
+
+    const title = el('div', 'tt-title');
+    const key = el('span', 'lk' + (e.dir === 'bwd' ? ' dash' : ''));
+    key.style.color = meta.color;
+    title.append(key, document.createTextNode(`${e.type} · ${meta.label}`));
+    tip.append(title);
+
+    const path = el('div', 'tt-path');
+    path.append(document.createTextNode(e.s.name), el('span', 'arrow', '→'), document.createTextNode(e.t.name));
+    tip.append(path);
+
+    const grid = el('div', 'tt-grid');
+    const sevV = el('span', 'v');
+    sevV.append(el('span', 'tt-dots', '●'.repeat(e.severity) + '○'.repeat(3 - e.severity)),
+                document.createTextNode(` ${e.severity} (${SEV_LABEL[e.severity]})`));
+    grid.append(el('span', 'k', 'Severity'), sevV);
+    addRow(grid, '방향', e.dir === 'fwd' ? '선행 → 후속' : '후속 → 선행 (선행 결과 변형)');
+    addRow(grid, '거리', `${e.span} step (order ${e.s.order} → ${e.t.order})`);
+    tip.append(grid);
+
+    if (e.mechanism) tip.append(el('div', 'tt-mech', e.mechanism));
+    tip.hidden = false;
+  }
+
+  // 헤더의 module 띠 hover
+  function hoverModule(b) {
+    tip.replaceChildren();
+    tip.append(el('div', 'tt-title', b.module));
+    const grid = el('div', 'tt-grid');
+    addRow(grid, '공정 수', String(b.count));
+    addRow(grid, 'Order', b.o0 === b.o1 ? String(b.o0) : `${b.o0} ~ ${b.o1}`);
+    tip.append(grid);
+    tip.hidden = false;
+  }
+  function addRow(grid, k, v) { grid.append(el('span', 'k', k), el('span', 'v', v)); }
+
+  // 툴팁 위치: 포인터 오른쪽 아래, 화면 밖으로 나가면 반대편으로
+  function placeTip(cx, cy) {
+    const pad = 14;
+    const r = tip.getBoundingClientRect();
+    let x = cx + pad, y = cy + pad;
+    if (x + r.width > window.innerWidth - 6) x = cx - pad - r.width;
+    if (y + r.height > window.innerHeight - 6) y = cy - pad - r.height;
+    tip.style.left = Math.max(6, x) + 'px';
+    tip.style.top = Math.max(6, y) + 'px';
+  }
+
+  /* ==========================================================================
+   * 10. 범례 / 검증 경고
+   * ======================================================================== */
+  function buildLegend() {
+    const lg = $('legend');
+    lg.replaceChildren();
+    const counts = {};
+    App.model.edges.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+
+    const typeGrp = el('div', 'grp');
+    typeGrp.append(el('span', 'grp-title', '영향 유형'));
+    TYPE_KEYS.concat(counts.ETC ? ['ETC'] : []).forEach(t => {
+      const it = el('span', 'item');
+      const k = el('span', 'lk'); k.style.color = TYPE_META[t].color;
+      it.append(k, el('b', null, t), document.createTextNode(TYPE_META[t].label), el('span', 'cnt', String(counts[t] || 0)));
+      typeGrp.append(it);
+    });
+
+    const sevGrp = el('div', 'grp');
+    sevGrp.append(el('span', 'grp-title', 'Severity'));
+    [1, 2, 3].forEach(s => {
+      const it = el('span', 'item');
+      const k = el('span', 'lk'); k.style.color = 'var(--ink-2)'; k.style.borderTopWidth = SEV_WIDTH[s] + 'px';
+      it.append(k, document.createTextNode(`${s} ${SEV_LABEL[s]}`));
+      sevGrp.append(it);
+    });
+
+    const dirGrp = el('div', 'grp');
+    dirGrp.append(el('span', 'grp-title', '방향'));
+    const d1 = el('span', 'item'); const k1 = el('span', 'lk'); k1.style.color = 'var(--ink-2)';
+    d1.append(k1, document.createTextNode('위쪽 실선: 선행 → 후속'));
+    const d2 = el('span', 'item'); const k2 = el('span', 'lk dash'); k2.style.color = 'var(--ink-2)';
+    d2.append(k2, document.createTextNode('아래쪽 점선: 후속 → 선행 변형'));
+    dirGrp.append(d1, d2);
+
+    lg.append(typeGrp, el('span', 'sep'), sevGrp, el('span', 'sep'), dirGrp);
+  }
+
+  // 검증 결과를 상단 경고 바에 표시
+  function renderIssues() {
+    const issues = App.model.issues;
+    const bar = $('warnBar');
+    if (!issues.length) { bar.hidden = true; return; }
+    const errs = issues.filter(i => i.level === 'error').length;
+    $('warnSummary').textContent = `⚠ 데이터 검증: 오류 ${errs}건 · 경고 ${issues.length - errs}건 (클릭하여 상세 보기)`;
+    const ul = $('warnList');
+    ul.replaceChildren();
+    issues.slice(0, 200).forEach(i => ul.append(el('li', i.level, i.msg)));
+    if (issues.length > 200) ul.append(el('li', null, `… 외 ${issues.length - 200}건`));
+    bar.hidden = false;
+  }
+  $('warnClose').onclick = () => { $('warnBar').hidden = true; onResize(); };
+
+  /* ==========================================================================
+   * 11. 성능 테스트용 대용량 가상 데이터 생성 (시드 고정 → 매번 동일)
+   * ======================================================================== */
+  function makeStressData(nNodes, nEdges) {
+    let seed = 20261015;
+    const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const mods = ['STI', 'Well', 'Gate', 'Spacer', 'S/D', 'Silicide', 'Contact', 'M1', 'V1', 'M2', 'V2', 'M3', 'V3', 'M4', 'V4', 'M5', 'Pad', 'Passivation'];
+    const unitCycle = ['CLEAN', 'DEPO', 'METRO', 'PHOTO', 'ETCH', 'CLEAN', 'IMP', 'THERMAL', 'CMP', 'METRO'];
+    const nodes = [];
+    for (let i = 0; i < nNodes; i++) {
+      const m = mods[Math.floor(i / nNodes * mods.length)];
+      const u = unitCycle[(i * 7 + Math.floor(rnd() * 3)) % unitCycle.length];
+      nodes.push({ id: 'S' + (i + 1), name: `${m} ${u[0] + u.slice(1).toLowerCase()} ${i + 1}`, module: m, unit: u, order: i + 1 });
+    }
+    const edges = [];
+    const used = new Set();
+    let guard = 0;
+    while (edges.length < nEdges && guard++ < nEdges * 20) {
+      const s = Math.floor(rnd() * nNodes);
+      const r = rnd();
+      let off = r < 0.65 ? 1 + Math.floor(rnd() * 8) : r < 0.85 ? 8 + Math.floor(rnd() * 80) : -(1 + Math.floor(rnd() * 40));
+      const t = s + off;
+      if (t < 0 || t >= nNodes || t === s) continue;
+      const type = TYPE_KEYS[Math.floor(rnd() * TYPE_KEYS.length)];
+      const key = s + '>' + t + type;
+      if (used.has(key)) continue;
+      used.add(key);
+      const sevR = rnd();
+      edges.push({
+        source: nodes[s].id, target: nodes[t].id, type,
+        severity: sevR < 0.5 ? 1 : sevR < 0.85 ? 2 : 3,
+        mechanism: `가상 데이터: ${nodes[s].name} 결과가 ${nodes[t].name}에 ${TYPE_META[type].label} 측면으로 영향`
+      });
+    }
+    return { nodes, edges };
+  }
+
+  /* ==========================================================================
+   * 12. 초기화 / 데이터 교체
+   * ======================================================================== */
+
+  // 데이터 교체 진입점 (3단계 업로드에서도 이 함수를 사용)
+  function setData(raw) {
+    const t0 = performance.now();
+    App.model = normalizeAndValidate(raw);
+    App.layout = computeLayout(App.model);
+    hoverEl = null;
+    hideTip();
+    buildFlow();
+    lastK = -1;
+    measureView();
+    fitHeight(false);
+    console.info(`[연계공정 Map] 노드 ${App.model.nodes.length}, 엣지 ${App.model.edges.length} 빌드 ${Math.round(performance.now() - t0)}ms`);
+  }
+
+  function measureView() {
+    const r = mainEl.getBoundingClientRect();
+    App.view.W = r.width; App.view.H = r.height;
+  }
+  function onResize() {
+    if (!App.layout) return;
+    measureView();
+    layoutMinimap();
+    clampView();
+    lastK = -1;
+    scheduleRender();
+  }
+  new ResizeObserver(onResize).observe($('flowMain'));
+  new ResizeObserver(() => layoutMinimap()).observe($('miniBox'));
+
+  $('dataSel').addEventListener('change', ev => {
+    if (ev.target.value === 'stress') setData(makeStressData(300, 1500));
+    else setData(loadEmbeddedData());
+  });
+
+  // 시작
+  try {
+    setData(loadEmbeddedData());
+  } catch (err) {
+    App.model = { nodes: [], edges: [], nodeById: new Map(), issues: [{ level: 'error', msg: '내장 데이터(JSON) 파싱 실패: ' + err.message }] };
+    renderIssues();
+    console.error(err);
+  }
+
+  // 디버깅/확장용 노출
+  window.ProcessMap = { App, setData, makeStressData };
+})();
+</script>
+</body>
+</html>
