@@ -18,6 +18,11 @@
     --node-bg: #ffffff;
     --node-stroke: #8e96a4;
     --accent: #1c2230;
+    --hover-wash: #eef1f5;
+    --up: #6d28d9;        /* Focus: upstream(영향 주는 공정) 테두리 */
+    --up-bg: #f3edff;
+    --down: #0f766e;      /* Focus: downstream(영향 받는 공정) 테두리 */
+    --down-bg: #e3f4f2;
     --warn-bg: #fff5e6;
     --warn-line: #efb35a;
     --warn-ink: #6e4300;
@@ -34,17 +39,17 @@
     flex-direction: column;
     overflow: hidden;
   }
-  button, select { font: inherit; color: inherit; }
+  button, select, input { font: inherit; color: inherit; }
 
   /* ---------- 상단 바 ---------- */
   .topbar {
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: center; gap: 14px;
     padding: 8px 14px;
     background: var(--surface);
     border-bottom: 1px solid var(--line);
     flex-wrap: wrap;
   }
-  .topbar h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+  .topbar h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
   .topbar h1 small { font-weight: 500; color: var(--ink-3); margin-left: 6px; font-size: 12px; }
   .tabs { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; }
   .tab {
@@ -56,14 +61,40 @@
   .tab:disabled { cursor: not-allowed; color: var(--ink-3); }
   .spacer { flex: 1; }
   .ctrl-group { display: inline-flex; align-items: center; gap: 4px; }
-  .ctrl-group label { color: var(--ink-3); font-size: 12px; margin-right: 2px; }
+  .ctrl-group > label, .ctrl-label { color: var(--ink-3); font-size: 12px; margin-right: 2px; white-space: nowrap; }
   .btn {
     border: 1px solid var(--line-2); background: var(--surface); border-radius: 6px;
-    padding: 4px 10px; cursor: pointer; min-width: 30px;
+    padding: 4px 10px; cursor: pointer; min-width: 30px; white-space: nowrap;
   }
-  .btn:hover { background: var(--band-a); }
-  .zoom-val { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .btn:hover { background: var(--hover-wash); }
+  .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .zoom-val { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-2); }
   select { border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 6px; background: var(--surface); }
+
+  /* 검색 + 자동완성 */
+  .search { position: relative; }
+  .search input {
+    width: 250px; border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 10px 5px 28px;
+    background: var(--surface);
+  }
+  .search input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .search .ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; font-size: 12px; }
+  .ac {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 340px; max-height: 360px; overflow: auto;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(20, 26, 40, 0.16); padding: 4px;
+  }
+  .ac[hidden] { display: none; }
+  .ac-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+  .ac-item.on { background: var(--hover-wash); }
+  .ac-item .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-item .nm mark { background: #fde68a; color: inherit; border-radius: 2px; }
+  .ac-item .meta { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+  .ac-empty { padding: 8px; color: var(--ink-3); }
+
+  /* hop 슬라이더 */
+  .hop input[type=range] { width: 70px; accent-color: var(--ink); }
+  .hop output { min-width: 34px; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
 
   /* ---------- 검증 경고 바 ---------- */
   .warnbar {
@@ -76,24 +107,73 @@
   .warnbar li.error { color: var(--err-ink); }
   .warnbar .close { float: right; border: 0; background: transparent; cursor: pointer; color: var(--warn-ink); font-size: 14px; }
 
-  /* ---------- 범례 ---------- */
-  .legend {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  /* ---------- 필터 바 (범례 겸용) ---------- */
+  .filterbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     padding: 6px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
     font-size: 12px; color: var(--ink-2);
   }
-  .legend .grp { display: inline-flex; align-items: center; gap: 12px; }
-  .legend .grp-title { color: var(--ink-3); font-weight: 600; margin-right: 2px; }
-  .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .legend .item b { color: var(--ink); font-weight: 600; }
-  .legend .cnt { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .fgrp { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .fgrp-title { color: var(--ink-3); font-weight: 600; margin-right: 2px; white-space: nowrap; }
+  .tchip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 6px;
+    border: 1px solid var(--line-2); border-radius: 999px; cursor: pointer; white-space: nowrap; user-select: none;
+    background: var(--surface);
+  }
+  .tchip:hover { background: var(--hover-wash); }
+  .tchip input { margin: 0; accent-color: var(--ink); }
+  .tchip b { color: var(--ink); font-weight: 600; }
+  .tchip.off { opacity: 0.45; }
+  .tchip.off .lk { border-top-style: dotted; }
+  .cnt { color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .lk { display: inline-block; width: 22px; height: 0; border-top: 3px solid currentColor; vertical-align: middle; }
   .lk.dash { border-top-style: dashed; }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: var(--surface); padding: 3px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .seg button + button { border-left: 1px solid var(--line-2); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button .lk { width: 14px; }
   .sep { width: 1px; align-self: stretch; background: var(--line); }
+  .num { width: 46px; border: 1px solid var(--line-2); border-radius: 5px; padding: 2px 4px; text-align: right; }
+  .chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+  .chk input { margin: 0; accent-color: var(--ink); }
+  .fpop-wrap { position: relative; }
+  .fpop {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 250px;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(20, 26, 40, 0.16); padding: 8px;
+  }
+  .fpop[hidden] { display: none; }
+  .fpop .acts { display: flex; gap: 6px; margin-bottom: 6px; }
+  .fpop .list { max-height: 280px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+  .fpop label { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+  .fpop label:hover { background: var(--hover-wash); }
+  .fpop label .cnt { margin-left: auto; }
+  .fpop .note { color: var(--ink-3); font-size: 11px; margin-top: 6px; line-height: 1.4; }
 
-  /* ---------- 메인 Flow 영역 ---------- */
+  /* ---------- 보조 범례 ---------- */
+  .legend {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 4px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .fbadge {
+    display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 4px; color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 15px; text-align: center;
+  }
+  .fbadge.up { background: var(--up); }
+  .fbadge.down { background: var(--down); }
+  .fbadge.both { background: var(--ink-2); }
+  .fbox { display: inline-block; width: 18px; height: 12px; border-radius: 3px; border: 2px solid; }
+  .fbox.up { border-color: var(--up); background: var(--up-bg); }
+  .fbox.down { border-color: var(--down); background: var(--down-bg); }
+  .fbox.root { border-color: var(--ink); background: var(--ink); }
+
+  /* ---------- 작업 영역: Flow + 우측 상세 패널 ---------- */
+  .workspace { flex: 1; display: flex; min-height: 200px; }
   .main {
-    flex: 1; position: relative; min-height: 200px; background: var(--surface);
+    flex: 1; position: relative; min-width: 0; background: var(--surface);
     overflow: hidden; cursor: grab; user-select: none; touch-action: none;
   }
   .main.dragging { cursor: grabbing; }
@@ -117,7 +197,7 @@
 
   .edge { fill: none; stroke-linecap: round; opacity: 0.85; vector-effect: non-scaling-stroke; }
   .edge.bwd { stroke-dasharray: 7 5; stroke-linecap: butt; }
-  #layerEdges, #layerHover { pointer-events: none; }
+  #layerEdges, #layerHover, #layerPinned, #layerBadges { pointer-events: none; }
   #layerEdgeHits path {
     fill: none; stroke: transparent; stroke-width: 12;
     pointer-events: stroke; vector-effect: non-scaling-stroke; cursor: pointer;
@@ -125,12 +205,34 @@
   .hover-halo { fill: none; stroke: #ffffff; opacity: 0.95; stroke-linecap: round; vector-effect: non-scaling-stroke; }
   .hover-edge { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
   .hover-edge.bwd { stroke-dasharray: 7 5; stroke-linecap: butt; }
+  .pin-glow { fill: none; stroke: var(--ink); opacity: 0.18; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .pin-ring { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 
   .node { cursor: pointer; }
   .node rect { fill: var(--node-bg); stroke: var(--node-stroke); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .node text { font-size: 11.5px; font-weight: 500; fill: var(--ink); pointer-events: none; }
   .node.is-hover rect, .node.hl-end rect { stroke: var(--ink); stroke-width: 2; }
   .lod-far .node text { display: none; }
+
+  /* 필터 결과 */
+  .edge.x, #layerEdgeHits path.x, .mini-edge.x { display: none; }
+  .node.faded { opacity: 0.25; }
+
+  /* Focus 모드: 관련 없는 노드·엣지는 opacity 0.08 */
+  #flowSvg.focus-on .edge { opacity: 0.08; }
+  #flowSvg.focus-on .edge.f-on { opacity: 1; }
+  #flowSvg.focus-on .node:not(.f-in) { opacity: 0.08; }
+  #flowSvg.focus-on #layerEdgeHits path:not(.f-on) { pointer-events: none; }
+  .node.f-up rect { stroke: var(--up); stroke-width: 2.5; fill: var(--up-bg); }
+  .node.f-down rect { stroke: var(--down); stroke-width: 2.5; fill: var(--down-bg); }
+  .node.f-both rect { stroke: var(--up); stroke-width: 2.5; fill: var(--down-bg); stroke-dasharray: 6 3; }
+  .node.f-root rect { fill: var(--ink); stroke: var(--ink); stroke-width: 2.5; }
+  .node.f-root text { fill: #ffffff; font-weight: 700; }
+  .badge rect { stroke: #ffffff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .badge.up rect { fill: var(--up); }
+  .badge.down rect { fill: var(--down); }
+  .badge.both rect { fill: var(--ink-2); }
+  .badge text { font-size: 9.5px; font-weight: 700; fill: #ffffff; }
 
   /* 고정 헤더(모듈 라벨 + order 눈금)와 좌측 swimlane 라벨 */
   .hdr-bg, .gutter-bg, .corner { fill: var(--surface); }
@@ -145,6 +247,61 @@
   .gut-unit { font-size: 11.5px; font-weight: 700; fill: var(--ink); letter-spacing: 0.02em; }
   .gut-sub { font-size: 10.5px; fill: var(--ink-3); }
   .corner-text { font-size: 10px; fill: var(--ink-3); }
+
+  /* ---------- 우측 상세 패널 ---------- */
+  .panel {
+    width: 360px; flex: none; background: var(--surface); border-left: 1px solid var(--line);
+    overflow: auto; display: flex; flex-direction: column;
+  }
+  .panel[hidden] { display: none; }
+  .p-sec { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .p-sec:last-child { border-bottom: 0; }
+  .p-h { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+  .p-h .cnt { font-weight: 500; }
+  .p-h .x { margin-left: auto; }
+  .p-title { font-size: 16px; font-weight: 700; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+  .p-sub { color: var(--ink-3); font-size: 12px; }
+  .p-empty { color: var(--ink-3); font-size: 12px; padding: 4px 0; }
+  .p-note { color: var(--ink-3); font-size: 11.5px; margin-top: 6px; }
+  .p-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; margin-top: 8px; }
+  .p-kv .k { color: var(--ink-3); }
+  .p-kv .v { font-weight: 600; }
+  .p-acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .p-acts .btn { font-size: 12px; padding: 3px 8px; }
+  .close-x { border: 0; background: transparent; cursor: pointer; color: var(--ink-3); font-size: 14px; padding: 0 2px; }
+  .close-x:hover { color: var(--ink); }
+
+  .pi {
+    padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; margin-bottom: 6px;
+    cursor: pointer; background: var(--surface);
+  }
+  .pi:hover { background: var(--hover-wash); }
+  .pi.on { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--ink); }
+  .pi-top { display: flex; align-items: center; gap: 7px; }
+  .pi-top b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .pi-sev { letter-spacing: 1px; font-size: 11px; color: var(--ink); white-space: nowrap; }
+  .pi-meta { color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+  .pi-mech { color: var(--ink-2); font-size: 12px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pi.on .pi-mech { -webkit-line-clamp: unset; }
+
+  .hop-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+  .hop-row .hl { flex: none; width: 46px; color: var(--ink-3); font-size: 11.5px; padding-top: 3px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .nchip {
+    border: 1px solid var(--line-2); border-radius: 5px; background: var(--surface); padding: 2px 7px;
+    font-size: 11.5px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .nchip:hover { background: var(--hover-wash); }
+  .nchip.up { border-color: var(--up); color: var(--up); }
+  .nchip.down { border-color: var(--down); color: var(--down); }
+  .nchip.both { border-color: var(--ink-2); color: var(--ink-2); }
+
+  .hub { display: grid; grid-template-columns: 1fr 80px auto; gap: 4px 8px; align-items: center; font-size: 12px; }
+  .hub .nm { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .hub .nm:hover { text-decoration: underline; }
+  .hub .bar { height: 6px; border-radius: 3px; background: var(--ink-2); }
+  .hub .bar-bg { background: var(--line); border-radius: 3px; height: 6px; }
+  .hub .val { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 11.5px; text-align: right; white-space: nowrap; }
 
   /* ---------- 미니맵(가로 스크롤 바) ---------- */
   .minimap-wrap {
@@ -196,7 +353,7 @@
   .tt-path .arrow { color: var(--ink-3); margin: 0 4px; font-weight: 400; }
   .tt-mech { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink-2); }
   .tt-dots { letter-spacing: 1px; }
-  .tt-dir { color: var(--ink-3); font-size: 11.5px; }
+  .tt-hint { margin-top: 5px; color: var(--ink-3); font-size: 11px; }
 </style>
 </head>
 <body>
@@ -208,6 +365,17 @@
     <button class="tab active" data-view="flow" role="tab" aria-selected="true">Flow</button>
     <button class="tab" data-view="dsm" role="tab" aria-selected="false" disabled title="3단계에서 구현 예정">DSM</button>
   </nav>
+  <div class="search">
+    <span class="ico">⌕</span>
+    <input id="searchInput" type="text" placeholder="공정 검색  ( / )" autocomplete="off" spellcheck="false"
+           role="combobox" aria-autocomplete="list" aria-controls="acList" aria-expanded="false">
+    <div class="ac" id="acList" role="listbox" hidden></div>
+  </div>
+  <div class="ctrl-group hop" title="Focus 시 따라갈 연계 깊이">
+    <label for="hopRange">Focus hop</label>
+    <input id="hopRange" type="range" min="1" max="3" step="1" value="1">
+    <output id="hopVal">1</output>
+  </div>
   <div class="spacer"></div>
   <div class="ctrl-group">
     <label for="dataSel">데이터</label>
@@ -223,6 +391,7 @@
     <button class="btn" id="btnFitH" title="높이 맞춤 (H)">높이 맞춤</button>
     <button class="btn" id="btnFitAll" title="전체 보기 (F)">전체 보기</button>
   </div>
+  <button class="btn on" id="btnPanel" title="상세 패널 열기/닫기 (P)">상세 패널</button>
 </header>
 
 <!-- =================== 데이터 검증 경고 =================== -->
@@ -234,40 +403,82 @@
   </details>
 </div>
 
-<!-- =================== 범례 =================== -->
-<div class="legend" id="legend"></div>
+<!-- =================== 필터 바 (type 범례 겸용) =================== -->
+<div class="filterbar" id="filterBar">
+  <div class="fgrp" id="fTypes"><span class="fgrp-title">영향 유형</span></div>
+  <span class="sep"></span>
+  <div class="fgrp">
+    <span class="fgrp-title">Severity ≥</span>
+    <div class="seg" id="fSev"></div>
+  </div>
+  <span class="sep"></span>
+  <div class="fgrp fpop-wrap">
+    <span class="fgrp-title">Module</span>
+    <button class="btn" id="fModBtn" aria-haspopup="true">전체 ▾</button>
+    <div class="fpop" id="fModPop" hidden>
+      <div class="acts">
+        <button class="btn" id="fModAll">전체 선택</button>
+        <button class="btn" id="fModNone">전체 해제</button>
+      </div>
+      <div class="list" id="fModList"></div>
+      <div class="note">선택한 module에 속한 공정이 주거나 받는 엣지만 표시합니다. 연결이 없는 다른 module 공정은 흐리게 표시됩니다.</div>
+    </div>
+  </div>
+  <span class="sep"></span>
+  <div class="fgrp">
+    <label class="chk"><input type="checkbox" id="fLong"> 장거리 엣지만</label>
+    <input class="num" type="number" id="fLongN" min="1" max="999" value="5" title="최소 step 거리"> <span>step 이상</span>
+  </div>
+  <span class="sep"></span>
+  <button class="btn" id="fReset">필터 초기화</button>
+</div>
 
-<!-- =================== Flow 뷰 =================== -->
-<main class="main" id="flowMain" tabindex="0" aria-label="연계공정 Flow 뷰">
-  <svg id="flowSvg">
-    <defs id="flowDefs"></defs>
-    <g id="viewport">
-      <g id="layerBands"></g>
-      <g id="layerLanes"></g>
-      <g id="layerEdges"></g>
-      <g id="layerEdgeHits"></g>
-      <g id="layerHover"></g>
-      <g id="layerNodes"></g>
-    </g>
-  </svg>
-  <svg id="overlaySvg">
-    <!-- 고정 헤더: 모듈 라벨 + order 눈금 (가로 팬/줌만 따라감) -->
-    <g id="hdr">
-      <rect class="hdr-bg" id="hdrBg" x="0" y="0" width="100%"></rect>
-      <g id="hdrInner"></g>
-      <line class="hdr-border" id="hdrBorder" x1="0" x2="100%"></line>
-    </g>
-    <!-- 고정 좌측: unit swimlane 라벨 (세로 팬/줌만 따라감) -->
-    <g id="gutter">
-      <rect class="gutter-bg" id="gutterBg" x="0" y="0" height="100%"></rect>
-      <g id="gutterInner"></g>
-      <line class="hdr-border" id="gutterBorder" y1="0" y2="100%"></line>
-    </g>
-    <rect class="corner" id="corner" x="0" y="0"></rect>
-    <text class="corner-text" id="cornerText1"></text>
-    <text class="corner-text" id="cornerText2"></text>
-  </svg>
-</main>
+<!-- =================== 보조 범례 =================== -->
+<div class="legend">
+  <span class="item"><span class="lk" style="color:var(--ink-2)"></span>위쪽 실선: 선행 → 후속</span>
+  <span class="item"><span class="lk dash" style="color:var(--ink-2)"></span>아래쪽 점선: 후속 → 선행 결과 변형</span>
+  <span class="sep"></span>
+  <span class="item"><span class="fbox root"></span>Focus 공정</span>
+  <span class="item"><span class="fbox up"></span><span class="fbadge up">U1</span>Upstream: 영향을 주는 공정 (숫자 = hop)</span>
+  <span class="item"><span class="fbox down"></span><span class="fbadge down">D1</span>Downstream: 영향을 받는 공정</span>
+</div>
+
+<!-- =================== Flow 뷰 + 상세 패널 =================== -->
+<div class="workspace">
+  <main class="main" id="flowMain" tabindex="0" aria-label="연계공정 Flow 뷰">
+    <svg id="flowSvg">
+      <defs id="flowDefs"></defs>
+      <g id="viewport">
+        <g id="layerBands"></g>
+        <g id="layerLanes"></g>
+        <g id="layerEdges"></g>
+        <g id="layerPinned"></g>
+        <g id="layerEdgeHits"></g>
+        <g id="layerHover"></g>
+        <g id="layerNodes"></g>
+        <g id="layerBadges"></g>
+      </g>
+    </svg>
+    <svg id="overlaySvg">
+      <!-- 고정 헤더: 모듈 라벨 + order 눈금 (가로 팬/줌만 따라감) -->
+      <g id="hdr">
+        <rect class="hdr-bg" id="hdrBg" x="0" y="0" width="100%"></rect>
+        <g id="hdrInner"></g>
+        <line class="hdr-border" id="hdrBorder" x1="0" x2="100%"></line>
+      </g>
+      <!-- 고정 좌측: unit swimlane 라벨 (세로 팬/줌만 따라감) -->
+      <g id="gutter">
+        <rect class="gutter-bg" id="gutterBg" x="0" y="0" height="100%"></rect>
+        <g id="gutterInner"></g>
+        <line class="hdr-border" id="gutterBorder" y1="0" y2="100%"></line>
+      </g>
+      <rect class="corner" id="corner" x="0" y="0"></rect>
+      <text class="corner-text" id="cornerText1"></text>
+      <text class="corner-text" id="cornerText2"></text>
+    </svg>
+  </main>
+  <aside class="panel" id="panel" aria-label="상세 패널"></aside>
+</div>
 
 <!-- =================== 미니맵 / 가로 스크롤 =================== -->
 <div class="minimap-wrap">
@@ -280,9 +491,10 @@
 
 <div class="statusbar">
   <span id="statCounts"></span>
+  <span id="statFocus"></span>
   <span class="hint">
-    <kbd>휠</kbd> 줌 · <kbd>Shift</kbd>+<kbd>휠</kbd> 가로 스크롤 · <kbd>드래그</kbd> 이동 ·
-    <kbd>F</kbd> 전체 · <kbd>H</kbd> 높이 맞춤 · <kbd>←</kbd><kbd>→</kbd> 이동
+    <kbd>클릭</kbd> Focus · <kbd>Esc</kbd> 해제 · <kbd>/</kbd> 검색 · <kbd>휠</kbd> 줌 · <kbd>Shift</kbd>+<kbd>휠</kbd> 가로 스크롤 ·
+    <kbd>F</kbd> 전체 · <kbd>H</kbd> 높이 맞춤 · <kbd>P</kbd> 패널
   </span>
 </div>
 
@@ -414,22 +626,31 @@
   const FONT = getComputedStyle(document.body).getPropertyValue('--font') || 'sans-serif';
 
   /* ==========================================================================
-   * 2. 앱 공유 상태 (2·3단계의 선택·필터·뷰 전환이 이 객체를 공유)
+   * 2. 앱 공유 상태
+   *    선택·필터 상태는 뷰와 무관하게 여기 한 곳에만 둔다 (3단계 DSM도 공유)
    * ======================================================================== */
+  const DEFAULT_FILTERS = () => ({
+    types: new Set(TYPE_KEYS.concat('ETC')),   // 표시할 type
+    minSeverity: 1,                            // severity 최소값
+    modules: null,                             // null = 전체, Set = 선택 module
+    longRangeOnly: false,                      // 장거리 엣지만
+    longRangeN: 5                              // 장거리 기준 step
+  });
   const App = {
     model: null,     // 정규화된 데이터 {nodes, edges, nodeById, issues}
     layout: null,    // Flow 뷰 좌표
     state: {
       view: 'flow',            // 'flow' | 'dsm'
-      selectedNodeId: null,    // (2단계) Focus 대상
-      hop: 1,                  // (2단계) Focus hop 깊이
-      filters: {               // (2단계) 필터
-        types: new Set(TYPE_KEYS.concat('ETC')),
-        minSeverity: 1,
-        modules: null,
-        longRangeOnly: false,
-        longRangeN: 5
-      }
+      selectedNodeId: null,    // Focus 대상 노드 id
+      pinnedEdge: null,        // 상세 패널/클릭으로 강조한 엣지 index
+      hop: 1,                  // Focus hop 깊이 (1~3)
+      filters: DEFAULT_FILTERS(),
+      panelOpen: true
+    },
+    derived: {                 // 상태로부터 계산된 값 (refresh 때 갱신)
+      edgeVisible: null,       // Uint8Array: 필터 통과 여부
+      nodeFaded: null,         // Uint8Array: module 필터로 흐리게
+      focus: null              // {root, up: Map(node→hop), down: Map, upE: Set, downE: Set}
     },
     view: { k: 1, tx: 0, ty: 0, W: 0, H: 0 }  // Flow 뷰 줌/팬 상태
   };
@@ -449,8 +670,10 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  const $ = id => document.getElementById(id);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const r1 = v => Math.round(v * 10) / 10;
+  const sevDots = s => '●'.repeat(s) + '○'.repeat(3 - s);
 
   // 텍스트 폭 측정 + 말줄임 (canvas measureText, 결과 캐시)
   const measureCtx = document.createElement('canvas').getContext('2d');
@@ -474,6 +697,12 @@
     }
     return lo > 0 ? text.slice(0, lo) + '…' : '';
   }
+  // 색 line key (type 색 + 방향에 따라 실선/점선)
+  function lineKey(type, dir) {
+    const k = el('span', 'lk' + (dir === 'bwd' ? ' dash' : ''));
+    k.style.color = TYPE_META[type].color;
+    return k;
+  }
 
   /* ==========================================================================
    * 4. 데이터 로드 · 정규화 · 검증
@@ -481,8 +710,7 @@
 
   // 내장 <script type="application/json" id="data"> 읽기
   function loadEmbeddedData() {
-    const txt = document.getElementById('data').textContent;
-    return JSON.parse(txt);
+    return JSON.parse($('data').textContent);
   }
 
   /**
@@ -645,10 +873,13 @@
       b.count = moduleCount.get(b.module) || 0;
       b.o0 = orders[b.c0]; b.o1 = orders[b.c1];
     });
+    // module 목록 (첫 등장 order 순) — 필터용
+    const moduleList = [];
+    sorted.forEach(n => { if (!moduleList.includes(n.module)) moduleList.push(n.module); });
 
     // (7) 엣지 연결점(port) 분산: fwd는 노드 윗변, bwd는 아랫변.
     //     arc가 서로 덜 교차하도록 [가까운 왼쪽 … 먼 왼쪽 | 먼 오른쪽 … 가까운 오른쪽] 순으로 배치
-    const ports = new Map();  // key: nodeIdx|side → [{edge, end, other}]
+    const ports = new Map();  // key: nodeIdx|side → [{edge, end, dx, dist}]
     const pushPort = (node, side, edge, end, other) => {
       const key = node.i + '|' + side;
       let arr = ports.get(key);
@@ -694,6 +925,7 @@
       let c1x = x1, c2x = x2;
       if (Math.abs(x2 - x1) < 4) { c1x = x1 - 30; c2x = x2 + 30; }
       e.d = `M${r1(x1)},${r1(y1)}C${r1(c1x)},${r1(cy)} ${r1(c2x)},${r1(cy)} ${r1(x2)},${r1(y2)}`;
+      e.mid = { x: (x1 + x2) / 2, y: 0.75 * cy + 0.25 * (y1 + y2) / 2 };   // arc 꼭짓점 근처 (화면 이동용)
     });
 
     const bounds = {
@@ -702,15 +934,110 @@
       minY: Math.floor(minY - 18),
       maxY: Math.ceil(maxY + 18)
     };
-    return { orders, lanes, bands, bounds, lanesH };
+    return { orders, lanes, bands, bounds, lanesH, moduleList };
   }
 
   /* ==========================================================================
-   * 6. Flow 뷰 렌더링 (데이터가 바뀔 때만 DOM 재생성)
+   * 6. 필터 · Focus 계산 (뷰와 무관한 공통 로직)
    * ======================================================================== */
-  const $ = id => document.getElementById(id);
+
+  // 필터 조건을 엣지/노드에 적용 → derived.edgeVisible / nodeFaded
+  function computeVisibility() {
+    const f = App.state.filters, M = App.model;
+    const vis = new Uint8Array(M.edges.length);
+    const mods = f.modules;
+    M.edges.forEach(e => {
+      let ok = f.types.has(e.type) && e.severity >= f.minSeverity;
+      if (ok && mods) ok = mods.has(e.s.module) || mods.has(e.t.module);
+      if (ok && f.longRangeOnly) ok = e.span >= f.longRangeN;
+      vis[e.i] = ok ? 1 : 0;
+    });
+    // module 필터: 선택 module 밖이고 표시 엣지도 없는 노드는 흐리게
+    const faded = new Uint8Array(M.nodes.length);
+    if (mods) {
+      M.nodes.forEach(n => {
+        if (mods.has(n.module)) return;
+        const touched = n.inE.some(e => vis[e.i]) || n.outE.some(e => vis[e.i]);
+        faded[n.i] = touched ? 0 : 1;
+      });
+    }
+    App.derived.edgeVisible = vis;
+    App.derived.nodeFaded = faded;
+    // 숨겨진 엣지가 강조 중이면 해제
+    if (App.state.pinnedEdge != null && !vis[App.state.pinnedEdge]) App.state.pinnedEdge = null;
+  }
+
+  /**
+   * 선택 노드 기준 upstream(영향 주는 쪽) / downstream(영향 받는 쪽) BFS.
+   * 필터를 통과한 엣지만 따라가며, hop 깊이(1~3)까지 탐색한다.
+   */
+  function computeFocus() {
+    const st = App.state, M = App.model, vis = App.derived.edgeVisible;
+    App.derived.focus = null;
+    if (st.selectedNodeId == null) return;
+    const root = M.nodeById.get(st.selectedNodeId);
+    if (!root) { st.selectedNodeId = null; return; }
+
+    const bfs = (dirKey, otherKey) => {
+      const dist = new Map(), eset = new Set();
+      const seen = new Set([root]);
+      let frontier = [root];
+      for (let d = 1; d <= st.hop && frontier.length; d++) {
+        const next = [];
+        frontier.forEach(u => {
+          u[dirKey].forEach(e => {
+            if (!vis[e.i]) return;
+            eset.add(e);
+            const w = e[otherKey];
+            if (!seen.has(w)) { seen.add(w); dist.set(w, d); next.push(w); }
+          });
+        });
+        frontier = next;
+      }
+      return { dist, eset };
+    };
+    const up = bfs('inE', 's');     // 나에게 영향을 주는 공정들
+    const down = bfs('outE', 't');  // 내가 영향을 주는 공정들
+    App.derived.focus = { root, up: up.dist, down: down.dist, upE: up.eset, downE: down.eset };
+  }
+
+  // 상태 변경 후 공통 갱신 진입점 (현재 뷰 + 패널 + 상태바)
+  function refresh(opts) {
+    if (opts && opts.filters) computeVisibility();
+    computeFocus();
+    flowApplyState();
+    renderPanel();
+    updateStatus();
+  }
+
+  // 선택 동작들 (Flow 클릭 · 검색 · 패널에서 공통 사용)
+  function selectNode(id, opts) {
+    App.state.selectedNodeId = id;
+    App.state.pinnedEdge = null;
+    refresh();
+    if (opts && opts.reveal) revealNode(App.model.nodeById.get(id));
+  }
+  function pinEdge(i, opts) {
+    App.state.pinnedEdge = i;
+    refresh();
+    if (opts && opts.reveal) revealEdge(App.model.edges[i]);
+  }
+  function clearSelection() {
+    if (App.state.selectedNodeId == null && App.state.pinnedEdge == null) return;
+    App.state.selectedNodeId = null;
+    App.state.pinnedEdge = null;
+    refresh();
+  }
+
+  /* ==========================================================================
+   * 7. Flow 뷰 렌더링 (데이터가 바뀔 때만 DOM 재생성)
+   * ======================================================================== */
   const svg = $('flowSvg');        // 콘텐츠 SVG (줌 확정 배율로 래스터)
   const mainEl = $('flowMain');    // 이벤트 수신 컨테이너
+
+  // 엣지/노드 DOM 참조 (index = edge.i / node.i) 와 마지막 class 캐시
+  let edgeEls = [], hitEls = [], miniEdgeEls = [], nodeEls = [];
+  let edgeCls = [], nodeCls = [];
 
   function buildFlow() {
     const { model, layout } = App;
@@ -752,7 +1079,12 @@
     });
     $('layerEdges').innerHTML = ep;
     $('layerEdgeHits').innerHTML = hp;
+    edgeEls = []; hitEls = [];
+    for (const c of $('layerEdges').children) edgeEls[+c.dataset.i] = c;
+    for (const c of $('layerEdgeHits').children) hitEls[+c.dataset.i] = c;
     $('layerHover').innerHTML = '';
+    $('layerPinned').innerHTML = '';
+    $('layerBadges').innerHTML = '';
 
     // --- 노드 ---
     const nodeFont = `500 11.5px ${FONT}`;
@@ -764,18 +1096,89 @@
             `<text x="${L.NODE_W / 2}" y="${L.NODE_H / 2 + 4}" text-anchor="middle">${esc(label)}</text></g>`;
     });
     $('layerNodes').innerHTML = np;
-    nodeEls = $('layerNodes').children;
+    nodeEls = Array.from($('layerNodes').children);
+    edgeCls = []; nodeCls = [];
+
     svg.setAttribute('viewBox', `${B.minX} ${B.minY} ${B.maxX - B.minX} ${B.maxY - B.minY}`);
     committedK = 0;
 
     buildHeader();
     buildGutter();
     buildMinimap();
-    buildLegend();
-    renderIssues();
-    $('statCounts').textContent = `노드 ${model.nodes.length} · 엣지 ${model.edges.length} · 모듈 ${new Set(model.nodes.map(n => n.module)).size}`;
   }
-  let nodeEls = null;
+
+  /**
+   * 공유 상태(필터·Focus·강조 엣지)를 Flow 뷰 DOM에 반영.
+   * class 문자열을 캐시와 비교해 바뀐 요소만 갱신 → 1500 엣지에서도 가벼움
+   */
+  function flowApplyState() {
+    const M = App.model, D = App.derived, F = D.focus;
+    svg.classList.toggle('focus-on', !!F);
+
+    M.edges.forEach(e => {
+      const hidden = !D.edgeVisible[e.i];
+      const on = !!F && (F.upE.has(e) || F.downE.has(e));
+      const c = `edge ${e.dir}${hidden ? ' x' : ''}${on ? ' f-on' : ''}`;
+      if (edgeCls[e.i] === c) return;
+      edgeCls[e.i] = c;
+      edgeEls[e.i].setAttribute('class', c);
+      hitEls[e.i].setAttribute('class', (hidden ? 'x' : '') + (on ? ' f-on' : ''));
+      miniEdgeEls[e.i].setAttribute('class', 'mini-edge' + (hidden ? ' x' : ''));
+    });
+
+    M.nodes.forEach(n => {
+      let c = 'node';
+      const role = focusRole(n);
+      if (role) c += ' f-in f-' + role;
+      else if (D.nodeFaded[n.i]) c += ' faded';   // Focus 대상은 module 필터로 흐리게 하지 않음
+      if (nodeCls[n.i] === c) return;
+      nodeCls[n.i] = c;
+      nodeEls[n.i].setAttribute('class', c);
+    });
+
+    // 강조 엣지: 양 끝 노드에 점선 링 (배지보다 먼저 그려 배지를 가리지 않게)
+    let bs = '';
+    const pe = App.state.pinnedEdge != null ? M.edges[App.state.pinnedEdge] : null;
+    if (pe) {
+      [pe.s, pe.t].forEach(n => {
+        bs += `<rect class="pin-ring" x="${n.x - 4}" y="${n.y - 4}" width="${L.NODE_W + 8}" height="${L.NODE_H + 8}" rx="8"/>`;
+      });
+    }
+    // Focus 배지 (U1 / D2 …): 색 + 글자 이중 표기로 색약에도 구분
+    if (F) {
+      const add = (n, cls, txt) => {
+        const w = 8 + txt.length * 6.2;
+        bs += `<g class="badge ${cls}" transform="translate(${n.x - 6},${n.y - 9})">` +
+              `<rect width="${r1(w)}" height="14" rx="3"/><text x="${r1(w / 2)}" y="10.5" text-anchor="middle">${txt}</text></g>`;
+      };
+      M.nodes.forEach(n => {
+        const u = F.up.get(n), d = F.down.get(n);
+        if (u && d) add(n, 'both', `U${u}·D${d}`);
+        else if (u) add(n, 'up', 'U' + u);
+        else if (d) add(n, 'down', 'D' + d);
+      });
+    }
+    $('layerBadges').innerHTML = bs;
+
+    // 강조 엣지 본체: 넓은 반투명 glow + 굵은 선 (Focus로 흐려진 상태에서도 보이도록)
+    let ps = '';
+    if (pe) {
+      const w = SEV_WIDTH[pe.severity];
+      ps = `<path class="pin-glow" d="${pe.d}" stroke-width="${w + 12}"/>` +
+           `<path class="hover-halo" d="${pe.d}" stroke-width="${w + 5}"/>` +
+           `<path class="hover-edge ${pe.dir}" d="${pe.d}" stroke="${TYPE_META[pe.type].color}" stroke-width="${w + 2}" marker-end="url(#arr-${pe.type}-${pe.severity})"/>`;
+    }
+    $('layerPinned').innerHTML = ps;
+  }
+
+  // Focus에서 이 노드의 역할: 'root' | 'up' | 'down' | 'both' | null
+  function focusRole(n) {
+    const F = App.derived.focus;
+    if (!F) return null;
+    if (n === F.root) return 'root';
+    const u = F.up.has(n), d = F.down.has(n);
+    return u && d ? 'both' : u ? 'up' : d ? 'down' : null;
+  }
 
   /* ---------- 고정 헤더: module 라벨(1행) + order 눈금(2행) ---------- */
   let hdrItems = [];   // {band, rect, line, text}
@@ -860,7 +1263,7 @@
   }
 
   /* ==========================================================================
-   * 7. 줌 / 팬 / 가로 스크롤
+   * 8. 줌 / 팬 / 가로 스크롤
    * ======================================================================== */
   /*
    * 렌더링 전략 (300 노드 · 1500 엣지에서도 끊김 없게):
@@ -868,7 +1271,7 @@
    *  - 팬: CSS translate만 변경 → GPU 합성만 일어나고 재래스터 없음
    *  - 휠 줌 진행 중: CSS scale(k / committedK)로 즉시 반응, 휠이 멈추면 commitZoom()으로 선명하게 재래스터
    */
-  let rafId = 0, lastK = -1, committedK = 0, zoomGesture = false, zoomTimer = 0;
+  let rafId = 0, lastK = -1, committedK = 0, zoomGesture = false, zoomTimer = 0, animId = 0;
 
   // 변환 적용을 다음 프레임으로 모아서 한 번만 처리
   function scheduleRender() {
@@ -900,16 +1303,19 @@
     updateMiniWindow();
   }
 
-  // 화면 안에 콘텐츠가 최소한 걸쳐 있도록 팬 범위 제한
-  function clampView() {
+  // 화면 안에 콘텐츠가 최소한 걸쳐 있도록 팬 범위 제한 (값만 계산)
+  function clampPos(k, tx, ty) {
     const v = App.view, B = App.layout.bounds;
     const left = L.GUTTER + 24, right = v.W - 24, top = L.HEADER + 12, bottom = v.H - 12;
-    const lo = Math.min(left - B.minX * v.k, right - B.maxX * v.k);
-    const hi = Math.max(left - B.minX * v.k, right - B.maxX * v.k);
-    v.tx = clamp(v.tx, lo, hi);
-    const loY = Math.min(top - B.minY * v.k, bottom - B.maxY * v.k);
-    const hiY = Math.max(top - B.minY * v.k, bottom - B.maxY * v.k);
-    v.ty = clamp(v.ty, loY, hiY);
+    const lo = Math.min(left - B.minX * k, right - B.maxX * k);
+    const hi = Math.max(left - B.minX * k, right - B.maxX * k);
+    const loY = Math.min(top - B.minY * k, bottom - B.maxY * k);
+    const hiY = Math.max(top - B.minY * k, bottom - B.maxY * k);
+    return { tx: clamp(tx, lo, hi), ty: clamp(ty, loY, hiY) };
+  }
+  function clampView() {
+    const v = App.view, p = clampPos(v.k, v.tx, v.ty);
+    v.tx = p.tx; v.ty = p.ty;
   }
   function kLimits() {
     const v = App.view, B = App.layout.bounds;
@@ -917,8 +1323,11 @@
     // 노드 300개급 데이터는 전체 맞춤 시 너무 작아지므로 하한 0.12 (전체 개요는 미니맵이 담당)
     return { min: clamp(fitAll * 0.9, 0.12, 0.25), max: 3 };
   }
+  function stopAnim() { if (animId) { cancelAnimationFrame(animId); animId = 0; zoomGesture = false; } }
+
   // 화면 좌표 (px, py)를 기준으로 줌
   function zoomAt(factor, px, py) {
+    stopAnim();
     const v = App.view, lim = kLimits();
     const k2 = clamp(v.k * factor, lim.min, lim.max);
     if (k2 === v.k) return;
@@ -929,11 +1338,13 @@
     scheduleRender();
   }
   function panBy(dx, dy) {
+    stopAnim();
     App.view.tx += dx; App.view.ty += dy;
     clampView(); scheduleRender();
   }
   // 전체 보기
   function fitAll() {
+    stopAnim();
     const v = App.view, B = App.layout.bounds;
     const pw = v.W - L.GUTTER - 40, ph = v.H - L.HEADER - 24;
     v.k = clamp(Math.min(pw / (B.maxX - B.minX), ph / (B.maxY - B.minY)), kLimits().min, 1.5);
@@ -943,23 +1354,53 @@
   }
   // 높이 맞춤: 세로를 화면에 맞추고 가로는 스크롤 (기본 시작 뷰)
   function fitHeight(keepX) {
+    stopAnim();
     const v = App.view, B = App.layout.bounds;
     const ph = v.H - L.HEADER - 24;
-    const oldK = v.k;
-    const centerContentX = (v.W / 2 - v.tx) / oldK;
+    const centerContentX = (v.W / 2 - v.tx) / v.k;
     v.k = clamp(ph / (B.maxY - B.minY), 0.45, 1.2);
     v.ty = L.HEADER + 12 + (ph - (B.maxY - B.minY) * v.k) / 2 - B.minY * v.k;
     v.tx = keepX ? v.W / 2 - centerContentX * v.k : L.GUTTER + 20 - B.minX * v.k;
     clampView(); scheduleRender();
   }
 
-  // 줌·팬 진행 중 표시 (이 동안은 hover 판정을 건너뜀).
-  // DOM class 토글은 1500개 요소 스타일 재계산을 유발하므로 JS 플래그만 사용
-  let interactTimer = 0, interacting = false;
-  function markInteracting() {
-    interacting = true;
-    clearTimeout(interactTimer);
-    interactTimer = setTimeout(() => { interacting = false; }, 140);
+  // 부드러운 이동/줌 애니메이션 (검색·패널에서 노드로 이동할 때)
+  function animateTo(k2, cx, cy) {
+    stopAnim();
+    const v = App.view;
+    // 콘텐츠 좌표 (cx, cy)가 플롯 영역 중앙에 오도록
+    const target = clampPos(k2, L.GUTTER + (v.W - L.GUTTER) / 2 - cx * k2, L.HEADER + (v.H - L.HEADER) / 2 - cy * k2);
+    const k0 = v.k, tx0 = v.tx, ty0 = v.ty, t0 = performance.now(), dur = 380;
+    zoomGesture = k2 !== k0;
+    const stepFn = now => {
+      const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      v.k = k0 + (k2 - k0) * e;
+      v.tx = tx0 + (target.tx - tx0) * e;
+      v.ty = ty0 + (target.ty - ty0) * e;
+      if (p < 1) { renderTransform(); animId = requestAnimationFrame(stepFn); }
+      else { animId = 0; zoomGesture = false; renderTransform(); }
+    };
+    animId = requestAnimationFrame(stepFn);
+  }
+  // 화면 안에 보이는지 (플롯 영역 기준)
+  function isOnScreen(x, y, margin) {
+    const v = App.view, sx = v.tx + x * v.k, sy = v.ty + y * v.k, m = margin || 30;
+    return sx > L.GUTTER + m && sx < v.W - m && sy > L.HEADER + m && sy < v.H - m;
+  }
+  function revealNode(n) {
+    if (!n) return;
+    const k2 = clamp(App.view.k, 0.75, 1.2);
+    if (k2 !== App.view.k || !isOnScreen(n.cx, n.y + L.NODE_H / 2, 80)) animateTo(k2, n.cx, n.y + L.NODE_H / 2);
+  }
+  function revealEdge(e) {
+    if (!e) return;
+    const sOn = isOnScreen(e.s.cx, e.s.y), tOn = isOnScreen(e.t.cx, e.t.y);
+    if (sOn && tOn) return;
+    // 양 끝이 한 화면에 들어오도록 배율 조정
+    const v = App.view;
+    const spanX = Math.abs(e.t.cx - e.s.cx) + L.NODE_W * 2;
+    const k2 = clamp(Math.min(v.k, (v.W - L.GUTTER - 60) / spanX), kLimits().min, 1.2);
+    animateTo(k2, (e.s.cx + e.t.cx) / 2, e.mid.y * 0.5 + (e.s.y + e.t.y) / 4);
   }
 
   // 휠: 기본 = 줌, Shift+휠 또는 가로 휠(트랙패드) = 가로 스크롤
@@ -973,16 +1414,27 @@
     if (Math.abs(dx) > Math.abs(dy)) { panBy(-dx, 0); return; }
     const rect = mainEl.getBoundingClientRect();
     // 휠 줌 제스처 동안에는 CSS scale로만 반응, 멈춘 뒤 확정
+    stopAnim();
     zoomGesture = true;
     clearTimeout(zoomTimer);
     zoomTimer = setTimeout(() => { zoomGesture = false; scheduleRender(); }, 160);
     zoomAt(Math.exp(-dy * 0.0016), ev.clientX - rect.left, ev.clientY - rect.top);
   }, { passive: false });
 
-  // 드래그 팬 (3px 이상 움직이면 드래그로 판단 → 2단계 클릭 판정과 구분)
+  // 줌·팬 진행 중 표시 (이 동안은 hover 판정을 건너뜀).
+  // DOM class 토글은 1500개 요소 스타일 재계산을 유발하므로 JS 플래그만 사용
+  let interactTimer = 0, interacting = false;
+  function markInteracting() {
+    interacting = true;
+    clearTimeout(interactTimer);
+    interactTimer = setTimeout(() => { interacting = false; }, 140);
+  }
+
+  // 드래그 팬 / 클릭 구분 (3px 미만 이동이면 클릭으로 처리)
   const drag = { active: false, moved: false, x: 0, y: 0, id: null };
   mainEl.addEventListener('pointerdown', ev => {
     if (ev.button !== 0) return;
+    stopAnim();
     drag.active = true; drag.moved = false;
     drag.x = ev.clientX; drag.y = ev.clientY; drag.id = ev.pointerId;
     mainEl.focus({ preventScroll: true });
@@ -1009,12 +1461,33 @@
     drag.active = false;
     mainEl.classList.remove('dragging');
     if (mainEl.hasPointerCapture(ev.pointerId)) mainEl.releasePointerCapture(ev.pointerId);
+    if (!drag.moved && ev.type === 'pointerup') handleFlowClick(ev.target);
   };
   mainEl.addEventListener('pointerup', endDrag);
   mainEl.addEventListener('pointercancel', endDrag);
   mainEl.addEventListener('pointerleave', () => { if (!drag.active) clearHover(); });
 
-  // 키보드 단축키
+  /**
+   * Flow 클릭 처리
+   *  - 노드: Focus (같은 노드 재클릭 시 해제)
+   *  - 엣지: 해당 엣지 강조 + 상세 패널
+   *  - 빈 곳: Focus·강조 해제
+   */
+  function handleFlowClick(target) {
+    if (target.closest('#overlaySvg')) return;   // 고정 헤더/라벨 클릭은 무시
+    const hit = target.closest('[data-kind]');
+    if (!hit) { clearSelection(); return; }
+    const kind = hit.getAttribute('data-kind');
+    if (kind === 'node') {
+      const n = App.model.nodes[+hit.getAttribute('data-i')];
+      if (App.state.selectedNodeId === n.id && App.state.pinnedEdge == null) clearSelection();
+      else selectNode(n.id);
+    } else if (kind === 'edge') {
+      pinEdge(+hit.getAttribute('data-i'));
+    }
+  }
+
+  // Flow 키보드 단축키
   mainEl.addEventListener('keydown', ev => {
     const v = App.view;
     switch (ev.key) {
@@ -1039,7 +1512,7 @@
   $('btnFitH').onclick = () => fitHeight(true);
 
   /* ==========================================================================
-   * 8. 미니맵 (전체 개요 + 가로 스크롤 바 역할)
+   * 9. 미니맵 (전체 개요 + 가로 스크롤 바 역할)
    * ======================================================================== */
   const mini = { sx: 1, sy: 1, ox: 0, oy: 0, W: 0, H: 0 };
   function buildMinimap() {
@@ -1050,12 +1523,14 @@
       s += `<rect class="${i % 2 ? 'band-b' : 'band-a'}" x="${b.x}" y="${B.minY}" width="${b.w}" height="${B.maxY - B.minY}"/>`;
     });
     model.edges.forEach(e => {
-      s += `<path class="mini-edge" d="${e.d}" stroke="${TYPE_META[e.type].color}"/>`;
+      s += `<path class="mini-edge" d="${e.d}" stroke="${TYPE_META[e.type].color}" data-i="${e.i}"/>`;
     });
     model.nodes.forEach(n => {
       s += `<rect class="mini-node" x="${n.x}" y="${n.y}" width="${L.NODE_W}" height="${L.NODE_H}"/>`;
     });
     $('miniContent').innerHTML = s;
+    miniEdgeEls = [];
+    $('miniContent').querySelectorAll('.mini-edge').forEach(p => { miniEdgeEls[+p.dataset.i] = p; });
     layoutMinimap();
   }
   // 미니맵 크기 변경 시 축척 재계산
@@ -1098,7 +1573,7 @@
       v.ty = L.HEADER + (v.H - L.HEADER) / 2 - cy * v.k;
       clampView(); scheduleRender();
     };
-    ms.addEventListener('pointerdown', ev => { down = true; ms.setPointerCapture(ev.pointerId); markInteracting(); moveTo(ev); });
+    ms.addEventListener('pointerdown', ev => { stopAnim(); down = true; ms.setPointerCapture(ev.pointerId); markInteracting(); moveTo(ev); });
     ms.addEventListener('pointermove', ev => { if (down) { markInteracting(); moveTo(ev); } });
     ms.addEventListener('pointerup', ev => { down = false; ms.releasePointerCapture(ev.pointerId); });
     ms.addEventListener('wheel', ev => {
@@ -1108,7 +1583,7 @@
   })();
 
   /* ==========================================================================
-   * 9. Hover 툴팁 + 강조
+   * 10. Hover 툴팁 + 강조
    * ======================================================================== */
   const tip = $('tooltip');
   let hoverEl = null;
@@ -1133,6 +1608,9 @@
     if (!hoverEl) return;
     hoverEl = null;
     hideTip();
+    clearHoverMarks();
+  }
+  function clearHoverMarks() {
     $('layerHover').innerHTML = '';
     svg.querySelectorAll('.node.is-hover, .node.hl-end').forEach(n => n.classList.remove('is-hover', 'hl-end'));
   }
@@ -1142,8 +1620,7 @@
   function overlayEdges(edges) {
     let s = '';
     edges.forEach(e => {
-      const w = SEV_WIDTH[e.severity];
-      s += `<path class="hover-halo" d="${e.d}" stroke-width="${w + 5}"/>`;
+      s += `<path class="hover-halo" d="${e.d}" stroke-width="${SEV_WIDTH[e.severity] + 5}"/>`;
     });
     edges.forEach(e => {
       const w = SEV_WIDTH[e.severity];
@@ -1152,10 +1629,11 @@
     $('layerHover').innerHTML = s;
   }
 
-  // 노드 hover: 테두리 강조 + 연결 엣지 미리보기 + 툴팁
+  // 노드 hover: 테두리 강조 + (필터 통과) 연결 엣지 미리보기 + 툴팁
   function hoverNode(n, g) {
     g.classList.add('is-hover');
-    overlayEdges(n.inE.concat(n.outE));
+    const vis = App.derived.edgeVisible;
+    overlayEdges(n.inE.concat(n.outE).filter(e => vis[e.i]));
     tip.replaceChildren();
     tip.append(el('div', 'tt-title', n.name));
     const grid = el('div', 'tt-grid');
@@ -1164,7 +1642,16 @@
     addRow(grid, 'Order', String(n.order));
     addRow(grid, 'ID', n.id);
     addRow(grid, '연계', `받는 영향 ${n.inE.length} · 주는 영향 ${n.outE.length}`);
+    const F = App.derived.focus, role = focusRole(n);
+    if (role === 'root') addRow(grid, 'Focus', '선택된 공정');
+    else if (role) {
+      const parts = [];
+      if (F.up.has(n)) parts.push(`Upstream ${F.up.get(n)} hop (영향을 줌)`);
+      if (F.down.has(n)) parts.push(`Downstream ${F.down.get(n)} hop (영향을 받음)`);
+      addRow(grid, 'Focus', parts.join(' / '));
+    }
     tip.append(grid);
+    tip.append(el('div', 'tt-hint', role === 'root' ? '클릭하면 Focus 해제' : '클릭하면 이 공정 기준으로 Focus'));
     tip.hidden = false;
   }
 
@@ -1173,30 +1660,32 @@
     overlayEdges([e]);
     nodeEls[e.s.i].classList.add('hl-end');
     nodeEls[e.t.i].classList.add('hl-end');
-    const meta = TYPE_META[e.type];
     tip.replaceChildren();
+    appendEdgeDetail(tip, e);
+    tip.append(el('div', 'tt-hint', '클릭하면 상세 패널에 고정'));
+    tip.hidden = false;
+  }
 
+  // 엣지 상세 내용 (툴팁·패널 공용)
+  function appendEdgeDetail(box, e) {
+    const meta = TYPE_META[e.type];
     const title = el('div', 'tt-title');
-    const key = el('span', 'lk' + (e.dir === 'bwd' ? ' dash' : ''));
-    key.style.color = meta.color;
-    title.append(key, document.createTextNode(`${e.type} · ${meta.label}`));
-    tip.append(title);
+    title.append(lineKey(e.type, e.dir), document.createTextNode(`${e.type} · ${meta.label}`));
+    box.append(title);
 
     const path = el('div', 'tt-path');
     path.append(document.createTextNode(e.s.name), el('span', 'arrow', '→'), document.createTextNode(e.t.name));
-    tip.append(path);
+    box.append(path);
 
     const grid = el('div', 'tt-grid');
     const sevV = el('span', 'v');
-    sevV.append(el('span', 'tt-dots', '●'.repeat(e.severity) + '○'.repeat(3 - e.severity)),
-                document.createTextNode(` ${e.severity} (${SEV_LABEL[e.severity]})`));
+    sevV.append(el('span', 'tt-dots', sevDots(e.severity)), document.createTextNode(` ${e.severity} (${SEV_LABEL[e.severity]})`));
     grid.append(el('span', 'k', 'Severity'), sevV);
     addRow(grid, '방향', e.dir === 'fwd' ? '선행 → 후속' : '후속 → 선행 (선행 결과 변형)');
     addRow(grid, '거리', `${e.span} step (order ${e.s.order} → ${e.t.order})`);
-    tip.append(grid);
+    box.append(grid);
 
-    if (e.mechanism) tip.append(el('div', 'tt-mech', e.mechanism));
-    tip.hidden = false;
+    if (e.mechanism) box.append(el('div', 'tt-mech', e.mechanism));
   }
 
   // 헤더의 module 띠 hover
@@ -1223,44 +1712,397 @@
   }
 
   /* ==========================================================================
-   * 10. 범례 / 검증 경고
+   * 11. 우측 상세 패널
    * ======================================================================== */
-  function buildLegend() {
-    const lg = $('legend');
-    lg.replaceChildren();
-    const counts = {};
-    App.model.edges.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+  const panel = $('panel');
+  let panelHover = false;   // 패널 항목 hover로 지도에 미리보기 중인지
 
-    const typeGrp = el('div', 'grp');
-    typeGrp.append(el('span', 'grp-title', '영향 유형'));
-    TYPE_KEYS.concat(counts.ETC ? ['ETC'] : []).forEach(t => {
-      const it = el('span', 'item');
-      const k = el('span', 'lk'); k.style.color = TYPE_META[t].color;
-      it.append(k, el('b', null, t), document.createTextNode(TYPE_META[t].label), el('span', 'cnt', String(counts[t] || 0)));
-      typeGrp.append(it);
-    });
+  // 패널 전체 다시 그리기 (선택 상태에 따라 섹션 구성)
+  function renderPanel() {
+    if (!App.state.panelOpen) return;
+    const st = App.state, M = App.model, F = App.derived.focus;
+    const scrollTop = panel.scrollTop;
+    if (panelHover) { panelHover = false; clearHoverMarks(); }   // 사라지는 항목의 미리보기 정리
+    panel.replaceChildren();
 
-    const sevGrp = el('div', 'grp');
-    sevGrp.append(el('span', 'grp-title', 'Severity'));
-    [1, 2, 3].forEach(s => {
-      const it = el('span', 'item');
-      const k = el('span', 'lk'); k.style.color = 'var(--ink-2)'; k.style.borderTopWidth = SEV_WIDTH[s] + 'px';
-      it.append(k, document.createTextNode(`${s} ${SEV_LABEL[s]}`));
-      sevGrp.append(it);
-    });
+    // (a) 강조 엣지 카드 (선택 노드와 무관하게 클릭한 엣지)
+    const pe = st.pinnedEdge != null ? M.edges[st.pinnedEdge] : null;
+    if (pe && !(F && (F.root === pe.s || F.root === pe.t))) panel.append(pinnedEdgeCard(pe));
 
-    const dirGrp = el('div', 'grp');
-    dirGrp.append(el('span', 'grp-title', '방향'));
-    const d1 = el('span', 'item'); const k1 = el('span', 'lk'); k1.style.color = 'var(--ink-2)';
-    d1.append(k1, document.createTextNode('위쪽 실선: 선행 → 후속'));
-    const d2 = el('span', 'item'); const k2 = el('span', 'lk dash'); k2.style.color = 'var(--ink-2)';
-    d2.append(k2, document.createTextNode('아래쪽 점선: 후속 → 선행 변형'));
-    dirGrp.append(d1, d2);
+    if (!F) {
+      if (!pe) panel.append(summarySection());
+      return;
+    }
+    const n = F.root;
 
-    lg.append(typeGrp, el('span', 'sep'), sevGrp, el('span', 'sep'), dirGrp);
+    // (b) 선택 노드 정보
+    const sec = el('div', 'p-sec');
+    const h = el('div', 'p-title');
+    h.append(document.createTextNode(n.name));
+    const x = el('button', 'close-x', '✕');
+    x.title = 'Focus 해제 (Esc)';
+    x.style.marginLeft = 'auto';
+    x.onclick = clearSelection;
+    h.append(x);
+    sec.append(h, el('div', 'p-sub', `${n.module} · ${n.unit} (${UNIT_LABEL[n.unit] || '미정의'}) · order ${n.order} · ${n.id}`));
+    panel.append(sec);
+
+    // (c) Focus 범위: hop별 upstream/downstream 노드 칩
+    const rng = el('div', 'p-sec');
+    const rh = el('div', 'p-h', `Focus 범위 · ${st.hop} hop`);
+    rng.append(rh);
+    rng.append(hopRows(F.up, 'up', 'Upstream'));
+    rng.append(hopRows(F.down, 'down', 'Downstream'));
+    panel.append(rng);
+
+    // (d) 받는 영향 / 주는 영향 목록 (severity 순)
+    panel.append(edgeListSection('받는 영향', 'Upstream', n.inE, 's', pe));
+    panel.append(edgeListSection('주는 영향', 'Downstream', n.outE, 't', pe));
+
+    panel.scrollTop = scrollTop;
   }
 
-  // 검증 결과를 상단 경고 바에 표시
+  // hop별 노드 칩 (클릭 시 그 노드로 Focus 이동)
+  function hopRows(distMap, cls, label) {
+    const wrap = el('div');
+    if (!distMap.size) {
+      wrap.append(el('div', 'p-empty', `${label}: 없음`));
+      return wrap;
+    }
+    const F = App.derived.focus;
+    const byHop = new Map();
+    distMap.forEach((d, node) => {
+      if (!byHop.has(d)) byHop.set(d, []);
+      byHop.get(d).push(node);
+    });
+    [...byHop.keys()].sort().forEach(d => {
+      const row = el('div', 'hop-row');
+      row.append(el('span', 'hl', `${cls === 'up' ? 'U' : 'D'}${d} (${byHop.get(d).length})`));
+      const chips = el('div', 'chips');
+      byHop.get(d).sort((a, b) => a.order - b.order).forEach(node => {
+        const both = F.up.has(node) && F.down.has(node);
+        const c = el('button', 'nchip ' + (both ? 'both' : cls), node.name);
+        c.title = `${node.module} · ${node.unit} · order ${node.order}${both ? ' (upstream·downstream 모두 해당)' : ''}\n클릭: 이 공정으로 Focus`;
+        c.onclick = () => selectNode(node.id, { reveal: true });
+        chips.append(c);
+      });
+      row.append(chips);
+      wrap.append(row);
+    });
+    return wrap;
+  }
+
+  // 들어오는/나가는 엣지 목록 섹션
+  function edgeListSection(title, sub, edges, otherKey, pinned) {
+    const vis = App.derived.edgeVisible;
+    const shown = edges.filter(e => vis[e.i])
+      .sort((a, b) => b.severity - a.severity || b.span - a.span || a[otherKey].order - b[otherKey].order);
+    const hidden = edges.length - shown.length;
+    const sec = el('div', 'p-sec');
+    const h = el('div', 'p-h');
+    h.append(document.createTextNode(`${title} (${sub})`), el('span', 'cnt', `${shown.length}건`));
+    sec.append(h);
+    if (!shown.length) sec.append(el('div', 'p-empty', '표시할 영향이 없습니다.'));
+    shown.forEach(e => sec.append(edgeItem(e, otherKey, pinned === e)));
+    if (hidden) sec.append(el('div', 'p-note', `필터로 숨겨진 영향 ${hidden}건`));
+    return sec;
+  }
+
+  // 엣지 항목: 클릭 → 해당 엣지 강조, hover → 지도에서 미리보기
+  function edgeItem(e, otherKey, on) {
+    const other = e[otherKey];
+    const it = el('div', 'pi' + (on ? ' on' : ''));
+    const top = el('div', 'pi-top');
+    top.append(lineKey(e.type, e.dir), el('b', null, other.name), el('span', 'pi-sev', sevDots(e.severity)));
+    it.append(top);
+    it.append(el('div', 'pi-meta',
+      `${e.type} · ${TYPE_META[e.type].label} · ${e.span} step · ${e.dir === 'fwd' ? '선행→후속' : '후속→선행 변형'} · ${other.module}`));
+    if (e.mechanism) it.append(el('div', 'pi-mech', e.mechanism));
+    it.title = '클릭: 지도에서 이 엣지 강조';
+    it.onclick = () => {
+      if (App.state.pinnedEdge === e.i) { App.state.pinnedEdge = null; refresh(); }
+      else pinEdge(e.i, { reveal: true });
+    };
+    it.onmouseenter = () => { clearHover(); overlayEdges([e]); panelHover = true; };
+    it.onmouseleave = () => { panelHover = false; clearHoverMarks(); };
+    return it;
+  }
+
+  // 클릭한 엣지 상세 카드
+  function pinnedEdgeCard(e) {
+    const sec = el('div', 'p-sec');
+    const h = el('div', 'p-h', '선택한 연계');
+    const x = el('button', 'close-x x', '✕');
+    x.title = '강조 해제';
+    x.onclick = () => { App.state.pinnedEdge = null; refresh(); };
+    h.append(x);
+    sec.append(h);
+    appendEdgeDetail(sec, e);
+    const acts = el('div', 'p-acts');
+    const b1 = el('button', 'btn', `원인 공정으로 Focus: ${e.s.name}`);
+    b1.onclick = () => selectNode(e.s.id, { reveal: true });
+    const b2 = el('button', 'btn', `영향 공정으로 Focus: ${e.t.name}`);
+    b2.onclick = () => selectNode(e.t.id, { reveal: true });
+    acts.append(b1, b2);
+    sec.append(acts);
+    return sec;
+  }
+
+  // 선택이 없을 때: 영향 Hub 요약 (severity 합 기준 TOP 8)
+  function summarySection() {
+    const M = App.model, vis = App.derived.edgeVisible;
+    const wrap = document.createDocumentFragment();
+
+    const intro = el('div', 'p-sec');
+    intro.append(el('div', 'p-title', '연계 요약'));
+    intro.append(el('div', 'p-sub', '공정을 클릭하거나 검색하면 upstream/downstream 연계가 표시됩니다. 아래 목록은 현재 필터 기준으로 영향이 큰 공정입니다 (Σ severity).'));
+    wrap.append(intro);
+
+    const score = (n, key) => {
+      let s = 0, c = 0;
+      n[key].forEach(e => { if (vis[e.i]) { s += e.severity; c++; } });
+      return { n, s, c };
+    };
+    const block = (title, key, unitLabel) => {
+      const sec = el('div', 'p-sec');
+      sec.append(el('div', 'p-h', title));
+      const rows = M.nodes.map(n => score(n, key)).filter(r => r.c > 0).sort((a, b) => b.s - a.s || b.c - a.c).slice(0, 8);
+      if (!rows.length) { sec.append(el('div', 'p-empty', '없음')); return sec; }
+      const max = rows[0].s;
+      const g = el('div', 'hub');
+      rows.forEach(r => {
+        const nm = el('span', 'nm', r.n.name);
+        nm.title = `${r.n.module} · ${r.n.unit}\n클릭: 이 공정으로 Focus`;
+        nm.onclick = () => selectNode(r.n.id, { reveal: true });
+        const bg = el('span', 'bar-bg');
+        const bar = el('span', 'bar');
+        bar.style.display = 'block';
+        bar.style.width = Math.max(4, r.s / max * 100) + '%';
+        bg.append(bar);
+        g.append(nm, bg, el('span', 'val', `Σ${r.s} · ${r.c}${unitLabel}`));
+      });
+      sec.append(g);
+      return sec;
+    };
+    wrap.append(block('영향을 많이 주는 공정', 'outE', '건'));
+    wrap.append(block('영향을 많이 받는 공정', 'inE', '건'));
+    return wrap;
+  }
+
+  $('btnPanel').onclick = togglePanel;
+  function togglePanel() {
+    App.state.panelOpen = !App.state.panelOpen;
+    panel.hidden = !App.state.panelOpen;
+    $('btnPanel').classList.toggle('on', App.state.panelOpen);
+    if (App.state.panelOpen) renderPanel();
+  }
+
+  /* ==========================================================================
+   * 12. 검색 (자동완성)
+   * ======================================================================== */
+  const sInput = $('searchInput'), acList = $('acList');
+  let acItems = [], acIdx = -1;
+
+  // 검색어 매칭: 이름 시작 > 단어 시작 > 포함 > id/module 포함 순
+  function searchNodes(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    const res = [];
+    App.model.nodes.forEach(n => {
+      const nm = n.name.toLowerCase();
+      let score = -1;
+      if (nm.startsWith(q)) score = 0;
+      else if (nm.split(/[\s\-_/()]+/).some(w => w.startsWith(q))) score = 1;
+      else if (nm.includes(q)) score = 2;
+      else if (n.id.toLowerCase().includes(q) || n.module.toLowerCase().includes(q) || n.unit.toLowerCase() === q) score = 3;
+      if (score >= 0) res.push({ n, score });
+    });
+    res.sort((a, b) => a.score - b.score || a.n.order - b.n.order);
+    return res.slice(0, 30).map(r => r.n);
+  }
+  // 이름에서 검색어 부분을 <mark>로 강조 (DOM으로 생성)
+  function highlightName(name, q) {
+    const span = el('span', 'nm');
+    const i = name.toLowerCase().indexOf(q.trim().toLowerCase());
+    if (i < 0 || !q.trim()) { span.textContent = name; return span; }
+    const len = q.trim().length;
+    span.append(document.createTextNode(name.slice(0, i)), el('mark', null, name.slice(i, i + len)), document.createTextNode(name.slice(i + len)));
+    return span;
+  }
+  function renderAc() {
+    const q = sInput.value;
+    acItems = searchNodes(q);
+    acIdx = acItems.length ? 0 : -1;
+    acList.replaceChildren();
+    if (!q.trim()) { closeAc(); return; }
+    if (!acItems.length) acList.append(el('div', 'ac-empty', '일치하는 공정이 없습니다.'));
+    acItems.forEach((n, i) => {
+      const it = el('div', 'ac-item' + (i === acIdx ? ' on' : ''));
+      it.setAttribute('role', 'option');
+      it.append(highlightName(n.name, q), el('span', 'meta', `${n.module} · ${n.unit} · #${n.order}`));
+      it.addEventListener('mousedown', ev => { ev.preventDefault(); chooseAc(i); });
+      it.addEventListener('mousemove', () => setAcIdx(i));
+      acList.append(it);
+    });
+    acList.hidden = false;
+    sInput.setAttribute('aria-expanded', 'true');
+  }
+  function setAcIdx(i) {
+    if (i === acIdx) return;
+    acIdx = i;
+    Array.from(acList.children).forEach((c, j) => c.classList.toggle('on', j === i));
+    const cur = acList.children[i];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+  function closeAc() {
+    acList.hidden = true;
+    sInput.setAttribute('aria-expanded', 'false');
+  }
+  // 자동완성 선택 → 노드로 이동 + Focus
+  function chooseAc(i) {
+    const n = acItems[i];
+    if (!n) return;
+    sInput.value = n.name;
+    closeAc();
+    sInput.blur();
+    selectNode(n.id, { reveal: true });
+    mainEl.focus({ preventScroll: true });
+  }
+  sInput.addEventListener('input', renderAc);
+  sInput.addEventListener('focus', () => { if (sInput.value.trim()) renderAc(); sInput.select(); });
+  sInput.addEventListener('blur', () => setTimeout(closeAc, 120));
+  sInput.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); if (acList.hidden) renderAc(); else setAcIdx(Math.min(acItems.length - 1, acIdx + 1)); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); setAcIdx(Math.max(0, acIdx - 1)); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); if (acIdx >= 0) chooseAc(acIdx); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeAc(); sInput.blur(); mainEl.focus({ preventScroll: true }); }
+  });
+
+  /* ==========================================================================
+   * 13. 필터 UI · hop 슬라이더
+   * ======================================================================== */
+
+  // type 체크박스 칩 (범례 겸용, 표시 건수 포함)
+  function buildTypeFilter() {
+    const box = $('fTypes');
+    box.querySelectorAll('.tchip').forEach(c => c.remove());
+    const types = TYPE_KEYS.concat(App.model.edges.some(e => e.type === 'ETC') ? ['ETC'] : []);
+    types.forEach(t => {
+      const lab = el('label', 'tchip');
+      lab.dataset.type = t;
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = App.state.filters.types.has(t);
+      cb.onchange = () => {
+        if (cb.checked) App.state.filters.types.add(t); else App.state.filters.types.delete(t);
+        refresh({ filters: true });
+      };
+      const k = el('span', 'lk'); k.style.color = TYPE_META[t].color;
+      lab.append(cb, k, el('b', null, t), document.createTextNode(TYPE_META[t].label), el('span', 'cnt', ''));
+      lab.title = `${t} (${TYPE_META[t].label}) 표시/숨김`;
+      box.append(lab);
+    });
+  }
+  // severity 최소값 세그먼트 버튼 (선 굵기로 범례 겸용)
+  function buildSevFilter() {
+    const seg = $('fSev');
+    seg.replaceChildren();
+    [1, 2, 3].forEach(s => {
+      const b = el('button');
+      const k = el('span', 'lk'); k.style.borderTopWidth = SEV_WIDTH[s] + 'px';
+      b.append(k, document.createTextNode(`${s} ${SEV_LABEL[s]}`));
+      b.title = `severity ${s} 이상만 표시`;
+      b.onclick = () => { App.state.filters.minSeverity = s; refresh({ filters: true }); };
+      seg.append(b);
+    });
+  }
+  // module 다중선택 팝오버
+  function buildModuleFilter() {
+    const list = $('fModList');
+    list.replaceChildren();
+    const cnt = new Map();
+    App.model.nodes.forEach(n => cnt.set(n.module, (cnt.get(n.module) || 0) + 1));
+    App.layout.moduleList.forEach(m => {
+      const lab = el('label');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.value = m;
+      cb.onchange = onModuleChange;
+      lab.append(cb, document.createTextNode(m), el('span', 'cnt', String(cnt.get(m))));
+      list.append(lab);
+    });
+  }
+  function onModuleChange() {
+    const all = App.layout.moduleList;
+    const sel = Array.from($('fModList').querySelectorAll('input')).filter(c => c.checked).map(c => c.value);
+    App.state.filters.modules = sel.length === all.length ? null : new Set(sel);
+    refresh({ filters: true });
+  }
+  $('fModBtn').onclick = ev => { ev.stopPropagation(); $('fModPop').hidden = !$('fModPop').hidden; };
+  $('fModAll').onclick = () => { $('fModList').querySelectorAll('input').forEach(c => { c.checked = true; }); onModuleChange(); };
+  $('fModNone').onclick = () => { $('fModList').querySelectorAll('input').forEach(c => { c.checked = false; }); onModuleChange(); };
+  document.addEventListener('pointerdown', ev => {
+    if (!$('fModPop').hidden && !ev.target.closest('.fpop-wrap')) $('fModPop').hidden = true;
+  });
+
+  // 장거리 엣지 토글
+  $('fLong').onchange = ev => { App.state.filters.longRangeOnly = ev.target.checked; refresh({ filters: true }); };
+  $('fLongN').oninput = ev => {
+    const v = Math.round(Number(ev.target.value));
+    if (!(v >= 1)) return;
+    App.state.filters.longRangeN = v;
+    if (App.state.filters.longRangeOnly) refresh({ filters: true }); else syncFilterUI();
+  };
+  $('fReset').onclick = () => { App.state.filters = DEFAULT_FILTERS(); refresh({ filters: true }); };
+
+  // hop 슬라이더
+  $('hopRange').oninput = ev => {
+    App.state.hop = +ev.target.value;
+    $('hopVal').textContent = App.state.hop;
+    refresh();
+  };
+
+  // 필터 UI를 공유 상태와 동기화 (상태 → UI)
+  function syncFilterUI() {
+    const f = App.state.filters, vis = App.derived.edgeVisible, M = App.model;
+    const total = {}, shown = {};
+    M.edges.forEach(e => {
+      total[e.type] = (total[e.type] || 0) + 1;
+      if (vis[e.i]) shown[e.type] = (shown[e.type] || 0) + 1;
+    });
+    $('fTypes').querySelectorAll('.tchip').forEach(lab => {
+      const t = lab.dataset.type, on = f.types.has(t);
+      lab.classList.toggle('off', !on);
+      lab.querySelector('input').checked = on;
+      const s = shown[t] || 0, tt = total[t] || 0;
+      lab.querySelector('.cnt').textContent = s === tt ? String(tt) : `${s}/${tt}`;
+    });
+    Array.from($('fSev').children).forEach((b, i) => b.classList.toggle('on', i + 1 === f.minSeverity));
+    $('fModList').querySelectorAll('input').forEach(c => { c.checked = !f.modules || f.modules.has(c.value); });
+    $('fModBtn').textContent = (f.modules ? `${f.modules.size}개 선택` : '전체') + ' ▾';
+    $('fModBtn').classList.toggle('on', !!f.modules);
+    $('fLong').checked = f.longRangeOnly;
+    $('fLongN').value = f.longRangeN;
+    $('hopRange').value = App.state.hop;
+    $('hopVal').textContent = App.state.hop;
+  }
+
+  function updateStatus() {
+    const M = App.model, vis = App.derived.edgeVisible;
+    let shown = 0;
+    for (let i = 0; i < vis.length; i++) shown += vis[i];
+    const mods = new Set(M.nodes.map(n => n.module)).size;
+    $('statCounts').textContent = `노드 ${M.nodes.length} · 엣지 ${shown === M.edges.length ? M.edges.length : `${shown} / ${M.edges.length} 표시`} · 모듈 ${mods}`;
+    const F = App.derived.focus;
+    $('statFocus').textContent = F
+      ? `Focus: ${F.root.name} — upstream ${F.up.size} · downstream ${F.down.size} (${App.state.hop} hop)`
+      : '';
+    syncFilterUI();
+  }
+
+  /* ==========================================================================
+   * 14. 검증 경고 / 전역 키
+   * ======================================================================== */
   function renderIssues() {
     const issues = App.model.issues;
     const bar = $('warnBar');
@@ -1273,10 +2115,24 @@
     if (issues.length > 200) ul.append(el('li', null, `… 외 ${issues.length - 200}건`));
     bar.hidden = false;
   }
-  $('warnClose').onclick = () => { $('warnBar').hidden = true; onResize(); };
+  $('warnClose').onclick = () => { $('warnBar').hidden = true; };
+
+  // 전역 단축키: Esc = Focus 해제, / = 검색, P = 패널
+  document.addEventListener('keydown', ev => {
+    const typing = ev.target.matches && ev.target.matches('input, select, textarea');
+    if (ev.key === 'Escape' && !typing) {
+      if (!$('fModPop').hidden) { $('fModPop').hidden = true; return; }
+      clearSelection();
+    } else if (ev.key === '/' && !typing) {
+      ev.preventDefault();
+      sInput.focus();
+    } else if ((ev.key === 'p' || ev.key === 'P') && !typing && !ev.ctrlKey && !ev.metaKey) {
+      togglePanel();
+    }
+  });
 
   /* ==========================================================================
-   * 11. 성능 테스트용 대용량 가상 데이터 생성 (시드 고정 → 매번 동일)
+   * 15. 성능 테스트용 대용량 가상 데이터 생성 (시드 고정 → 매번 동일)
    * ======================================================================== */
   function makeStressData(nNodes, nEdges) {
     let seed = 20261015;
@@ -1295,7 +2151,7 @@
     while (edges.length < nEdges && guard++ < nEdges * 20) {
       const s = Math.floor(rnd() * nNodes);
       const r = rnd();
-      let off = r < 0.65 ? 1 + Math.floor(rnd() * 8) : r < 0.85 ? 8 + Math.floor(rnd() * 80) : -(1 + Math.floor(rnd() * 40));
+      const off = r < 0.65 ? 1 + Math.floor(rnd() * 8) : r < 0.85 ? 8 + Math.floor(rnd() * 80) : -(1 + Math.floor(rnd() * 40));
       const t = s + off;
       if (t < 0 || t >= nNodes || t === s) continue;
       const type = TYPE_KEYS[Math.floor(rnd() * TYPE_KEYS.length)];
@@ -1313,7 +2169,7 @@
   }
 
   /* ==========================================================================
-   * 12. 초기화 / 데이터 교체
+   * 16. 초기화 / 데이터 교체
    * ======================================================================== */
 
   // 데이터 교체 진입점 (3단계 업로드에서도 이 함수를 사용)
@@ -1321,9 +2177,18 @@
     const t0 = performance.now();
     App.model = normalizeAndValidate(raw);
     App.layout = computeLayout(App.model);
+    App.state.selectedNodeId = null;
+    App.state.pinnedEdge = null;
+    App.state.filters.modules = null;   // module 목록이 바뀌므로 module 필터만 초기화
     hoverEl = null;
     hideTip();
+    sInput.value = '';
     buildFlow();
+    buildTypeFilter();
+    buildSevFilter();
+    buildModuleFilter();
+    renderIssues();
+    refresh({ filters: true });
     lastK = -1;
     measureView();
     fitHeight(false);
@@ -1342,7 +2207,7 @@
     lastK = -1;
     scheduleRender();
   }
-  new ResizeObserver(onResize).observe($('flowMain'));
+  new ResizeObserver(onResize).observe(mainEl);
   new ResizeObserver(() => layoutMinimap()).observe($('miniBox'));
 
   $('dataSel').addEventListener('change', ev => {
@@ -1360,7 +2225,7 @@
   }
 
   // 디버깅/확장용 노출
-  window.ProcessMap = { App, setData, makeStressData };
+  window.ProcessMap = { App, setData, makeStressData, selectNode, pinEdge, clearSelection, refresh };
 })();
 </script>
 </body>
